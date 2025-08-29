@@ -138,6 +138,10 @@ class ECGEvidenceExtractor(BaseEvidenceCollector):
             evidence['metadata']['extraction_mode'] = 'regex_fallback' if self.llm_client else 'regex'
             ecg_findings = self._extract_findings_regex(ecg_notes)
 
+        # Ensure every ECG finding dictionary has the 'mi_related' key
+        for finding in ecg_findings:
+            finding['mi_related'] = finding.get('mi_related', False)
+
         evidence.update({
             'ecg_findings': ecg_findings,
             'sources': [{

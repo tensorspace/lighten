@@ -361,24 +361,49 @@ class ClinicalPipeline:
         
         # --- Save Requirement-Compliant Nested JSON --- 
         requirement_output = {}
-        for hadm_id, result in results.items():
+        for hadm_id, result in summary.items():
             patient_id = result['patient_id']
+
+            # Initialize patient entry if not present
             if patient_id not in requirement_output:
-                requirement_output[patient_id] = {}
+                requirement_output[patient_id] = {
+                    "Myocardial Infarction": []
+                }
+
+            mi_result_str = result['results'].get('mi_detected', 'NO')
+            mi_value = 'Y' if mi_result_str else 'N'
             
-            mi_result = result['results'].get('mi_detected', 'NO')
             onset_date_result = result['results'].get('mi_onset_date')
             
-            # Use the most definitive MI result for a patient
-            if mi_result or requirement_output[patient_id].get('Myocardial Infarction') != 'YES':
-                requirement_output[patient_id]['Myocardial Infarction'] = 'YES' if mi_result else 'NO'
+            mi_entry = {"value": mi_value}
+
+            if mi_value == 'Y' and onset_date_result:
+                onset_date_iso = onset_date_result
+                onset_date_formatted = pd.to_datetime(onset_date_iso).strftime('%Y-%m-%d')
                 
-                onset_date_iso = onset_date_result if onset_date_result else None
-                if onset_date_iso:
-                    # Format to YYYY-MM-DD for the final output, matching the requirement
-                    requirement_output[patient_id]['Myocardial Infarction Onset Date'] = pd.to_datetime(onset_date_iso).strftime('%Y-%m-%d')
-                else:
-                    requirement_output[patient_id]['Myocardial Infarction Onset Date'] = None
+                # Extract symptoms from evidence
+                symptoms_list = []
+                symptoms_evidence = result.get('evidence', {}).get('clinical', {}).get('symptoms', [])
+                for symptom in symptoms_evidence:
+                    symptoms_list.append({"value": symptom.get('symptom', 'unknown')})
+
+                mi_entry["Myocardial Infarction Date"] = [
+                    {
+                        "value": onset_date_formatted,
+                        "Symptoms": symptoms_list
+                    }
+                ]
+            
+            # Avoid duplicate entries for the same patient if results are consistent
+            # This logic can be enhanced for more complex aggregation scenarios
+            existing_mi_values = [entry['value'] for entry in requirement_output[patient_id]["Myocardial Infarction"]]
+            if mi_value not in existing_mi_values or mi_value == 'Y':
+                 # Overwrite 'N' with 'Y' if a positive case is found for the patient
+                if mi_value == 'Y':
+                    requirement_output[patient_id]["Myocardial Infarction"] = [entry for entry in requirement_output[patient_id]["Myocardial Infarction"] if entry['value'] != 'N']
+                
+                if not any(entry['value'] == 'Y' and mi_value == 'Y' for entry in requirement_output[patient_id]["Myocardial Infarction"]):
+                    requirement_output[patient_id]["Myocardial Infarction"].append(mi_entry)
 
         requirement_json_path = os.path.join(self.output_dir, 'requirement_compliant_output.json')
         with open(requirement_json_path, 'w') as f:

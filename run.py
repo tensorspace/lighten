@@ -52,6 +52,8 @@ def main():
                         help='LLM model name (overrides default)')
     parser.add_argument('--llm-base-url', type=str, default=None,
                         help='LLM base URL (default: Together chat completions endpoint)')
+    parser.add_argument('--clear-cache', action='store_true',
+                        help='Clear the LLM cache before processing')
     
     args = parser.parse_args()
     
@@ -63,6 +65,15 @@ def main():
     
     # Create output directory if it doesn't exist
     os.makedirs(args.output_dir, exist_ok=True)
+    
+    # Clear LLM cache if requested
+    if args.clear_cache:
+        cache_file = os.path.join(args.output_dir, 'llm_cache.json')
+        if os.path.exists(cache_file):
+            os.remove(cache_file)
+            print(f"Cleared LLM cache: {cache_file}")
+        else:
+            print("No LLM cache file found to clear.")
     
     try:
         # Initialize the pipeline
