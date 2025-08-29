@@ -9,6 +9,7 @@ import pandas as pd
 from pathlib import Path
 from tqdm import tqdm
 import random
+from dotenv import load_dotenv
 
 # Add the project root to the Python path
 sys.path.append(str(Path(__file__).parent))
@@ -16,6 +17,7 @@ sys.path.append(str(Path(__file__).parent))
 from lighten_ml.pipeline import ClinicalPipeline
 
 def main():
+    load_dotenv()  # Load environment variables from .env file
     parser = argparse.ArgumentParser(description='Process clinical data for MI detection')
     parser.add_argument('--lab-events', type=str, default='labevents.csv',
                         help='Path to lab events CSV file')
