@@ -11,6 +11,7 @@ import time
 import hashlib
 import logging
 import requests
+import random
 
 DEFAULT_BASE_URL = os.environ.get("LLM_BASE_URL", "https://api.together.xyz/v1")
 DEFAULT_MODEL = os.environ.get("LLM_MODEL", "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo")
@@ -64,6 +65,7 @@ class LightenLLMClient:
         self.rate_limiter = TokenBucket(rate_limit_tps, rate_limit_tps)
         self.cache: Dict[str, Any] = {}
         self.cache_size = cache_size
+        self.retries = 5  # Increased from 2 to 5
 
     @property
     def enabled(self) -> bool:
@@ -85,7 +87,6 @@ class LightenLLMClient:
         temperature: float = 0.1,
         max_tokens: int = 2048,
         response_format: Optional[Dict[str, Any]] = None,
-        retries: int = 2,
         retry_delay: float = 1.5,
     ) -> str:
         """Call chat completions and return assistant content string.
@@ -117,7 +118,7 @@ class LightenLLMClient:
         logger.info(f"Sending request to LLM API (model: {self.model})...")
         
         last_exc: Optional[Exception] = None
-        for attempt in range(retries + 1):
+        for attempt in range(self.retries):
             try:
                 resp = requests.post(url, headers=self._headers(), json=payload, timeout=self.timeout)
                 resp.raise_for_status()  # Raise an exception for bad status codes
@@ -133,11 +134,14 @@ class LightenLLMClient:
 
                 return result
             except requests.exceptions.RequestException as e:
-                logger.warning(f"LLM API request failed (attempt {attempt + 1}/{retries}): {e}")
-                time.sleep(retry_delay * (2 ** attempt)) # Exponential backoff
-        
-        logger.error(f"LLM API request failed after {retries} retries.")
-        raise RuntimeError(f"LLM API request failed after {retries} retries.")
+                logger.warning(f"LLM API request failed (attempt {attempt + 1}/{self.retries}): {e}")
+                if attempt < self.retries - 1:
+                    delay = retry_delay * (2 ** attempt) + random.uniform(0, 1) # Exponential backoff with jitter
+                    logger.warning(f"Retrying in {delay:.2f} seconds...")
+                    time.sleep(delay)
+                else:
+                    logger.error(f"LLM API request failed after {self.retries} retries.")
+                    raise RuntimeError(f"LLM API request failed after {self.retries} retries.")
 
     def extract_json(self, instructions: str, text: str, schema_hint: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Ask the LLM to extract structured JSON from text.
