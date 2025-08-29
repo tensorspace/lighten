@@ -1,5 +1,5 @@
 """Clinical evidence extractor for identifying MI-related symptoms and findings."""
-from typing import Dict, List, Any, Set, Optional
+from typing import Dict, List, Any, Set, Optional, Tuple
 import re
 from datetime import datetime
 from .base_evidence_collector import BaseEvidenceCollector
@@ -28,18 +28,90 @@ class ClinicalEvidenceExtractor(BaseEvidenceCollector):
     
     # Regular expressions for symptom patterns
     SYMPTOM_PATTERNS = [
-        re.compile(r'chest\s+(?:pain|discomfort|pressure|tightness|heaviness|burning)', re.IGNORECASE),
-        re.compile(r'substernal\s+(?:pain|discomfort|pressure|tightness)', re.IGNORECASE),
-        re.compile(r'radiat(?:e|ing|es|ed).*?(?:arm|jaw|neck|back|shoulder)', re.IGNORECASE),
-        re.compile(r'(?:shortness of breath|sob|dyspnea)', re.IGNORECASE),
-        re.compile(r'(?:diaphoresis|sweating)', re.IGNORECASE),
-        re.compile(r'(?:nausea|vomiting)', re.IGNORECASE),
-        re.compile(r'(?:lightheaded|dizzy|syncope)', re.IGNORECASE),
-        re.compile(r'(?:palpitations|heart racing|pounding)', re.IGNORECASE),
-        re.compile(r'(?:fatigue|weakness|tired)', re.IGNORECASE),
-        re.compile(r'(?:indigestion|heartburn|epigastric pain)', re.IGNORECASE)
+        {
+            'name': 'Chest Pain',
+            'pattern': re.compile(r'chest\s+(?:pain|discomfort|pressure|tightness|heaviness|burning)', re.IGNORECASE),
+            'mi_related': True
+        },
+        {
+            'name': 'Substernal Pain',
+            'pattern': re.compile(r'substernal\s+(?:pain|discomfort|pressure|tightness)', re.IGNORECASE),
+            'mi_related': True
+        },
+        {
+            'name': 'Radiation to Arm',
+            'pattern': re.compile(r'radiat(?:e|ing|es|ed).*?(?:arm)', re.IGNORECASE),
+            'mi_related': True
+        },
+        {
+            'name': 'Radiation to Jaw',
+            'pattern': re.compile(r'radiat(?:e|ing|es|ed).*?(?:jaw)', re.IGNORECASE),
+            'mi_related': True
+        },
+        {
+            'name': 'Radiation to Neck',
+            'pattern': re.compile(r'radiat(?:e|ing|es|ed).*?(?:neck)', re.IGNORECASE),
+            'mi_related': True
+        },
+        {
+            'name': 'Radiation to Back',
+            'pattern': re.compile(r'radiat(?:e|ing|es|ed).*?(?:back)', re.IGNORECASE),
+            'mi_related': True
+        },
+        {
+            'name': 'Radiation to Shoulder',
+            'pattern': re.compile(r'radiat(?:e|ing|es|ed).*?(?:shoulder)', re.IGNORECASE),
+            'mi_related': True
+        },
+        {
+            'name': 'Shortness of Breath',
+            'pattern': re.compile(r'(?:shortness of breath|sob|dyspnea)', re.IGNORECASE),
+            'mi_related': True
+        },
+        {
+            'name': 'Diaphoresis',
+            'pattern': re.compile(r'(?:diaphoresis|sweating)', re.IGNORECASE),
+            'mi_related': True
+        },
+        {
+            'name': 'Nausea/Vomiting',
+            'pattern': re.compile(r'(?:nausea|vomiting)', re.IGNORECASE),
+            'mi_related': True
+        },
+        {
+            'name': 'Lightheaded/Dizzy',
+            'pattern': re.compile(r'(?:lightheaded|dizzy|syncope)', re.IGNORECASE),
+            'mi_related': True
+        },
+        {
+            'name': 'Palpitations',
+            'pattern': re.compile(r'(?:palpitations|heart racing|pounding)', re.IGNORECASE),
+            'mi_related': True
+        },
+        {
+            'name': 'Fatigue/Weakness',
+            'pattern': re.compile(r'(?:fatigue|weakness|tired)', re.IGNORECASE),
+            'mi_related': True
+        },
+        {
+            'name': 'Indigestion/Heartburn',
+            'pattern': re.compile(r'(?:indigestion|heartburn|epigastric pain)', re.IGNORECASE),
+            'mi_related': True
+        },
+        {
+            'name': 'Atypical Chest Pain',
+            'pattern': re.compile(r'atypical\s+chest\s+pain', re.IGNORECASE),
+            'mi_related': False
+        }
     ]
-    
+
+    DIAGNOSIS_PATTERNS = [
+        {
+            'name': 'MI Diagnosis',
+            'pattern': re.compile(r'\b(myocardial infarction|mi|n?stemi)\b', re.IGNORECASE),
+        }
+    ]
+
     # Keywords for MI-related findings
     FINDING_KEYWORDS = [
         'acute coronary syndrome', 'acs', 'stemi', 'nstemi',
@@ -51,223 +123,131 @@ class ClinicalEvidenceExtractor(BaseEvidenceCollector):
         'ejection fraction', 'ef\s*[<]?\s*40%?', 'cardiogenic shock'
     ]
     
-    def __init__(self, notes_loader: Any):
+    def __init__(self, notes_data_loader: Any, llm_client: Optional[Any] = None, max_notes: Optional[int] = None):
         """Initialize the clinical evidence extractor.
         
         Args:
-            notes_loader: Instance of ClinicalNotesLoader for accessing clinical notes
+            notes_data_loader: Instance of ClinicalNotesDataLoader for accessing clinical notes
+            llm_client: Optional instance of the LLM client
+            max_notes: Maximum number of notes to process
         """
-        super().__init__(notes_loader=notes_loader)
-        self.compiled_keywords = [re.compile(rf'\b{re.escape(kw)}\b', re.IGNORECASE) 
-                                for kw in self.SYMPTOM_KEYWORDS + self.FINDING_KEYWORDS]
+        super().__init__(notes_data_loader=notes_data_loader, llm_client=llm_client, max_notes=max_notes)
     
-    def collect_evidence(self, patient_id: str) -> Dict[str, Any]:
-        """Collect clinical evidence for a patient.
-        
+    def collect_evidence(self, patient_id: str, hadm_id: str) -> Dict[str, Any]:
+        """Collect clinical evidence from notes for a specific admission.
+
         Args:
             patient_id: The ID of the patient
-            
+            hadm_id: The ID of the hospital admission
+
         Returns:
             Dictionary containing clinical evidence
         """
         evidence = self._get_evidence_base()
-        
-        if not self.notes_loader:
-            evidence['error'] = 'Notes loader not provided'
+        evidence['symptoms'] = []
+        evidence['diagnoses'] = []
+        evidence['metadata'] = {'extraction_mode': 'none'}
+
+        # Get clinical notes for the admission
+        notes = self.notes_data_loader.get_patient_notes(patient_id, hadm_id)
+
+        # Limit number of notes if configured
+        if self.max_notes and len(notes) > self.max_notes:
+            notes = notes.head(self.max_notes)
+
+        if notes.empty:
             return evidence
-        # If LLM is enabled, prefer LLM-based extraction with regex fallback
+
+        # If LLM client is available, use it for extraction
         try_llm = getattr(self, 'llm_client', None) and isinstance(self.llm_client, LightenLLMClient) and self.llm_client.enabled
         if try_llm:
             try:
-                symptoms, findings = self._extract_with_llm(patient_id)
+                symptoms, diagnoses = self._extract_with_llm(notes)
                 mode = 'llm'
             except Exception:
-                symptoms = self._extract_symptoms(patient_id)
-                findings = self._extract_findings(patient_id)
+                symptoms, diagnoses = self._extract_with_regex(notes)
                 mode = 'regex_fallback'
         else:
-            symptoms = self._extract_symptoms(patient_id)
-            findings = self._extract_findings(patient_id)
+            symptoms, diagnoses = self._extract_with_regex(notes)
             mode = 'regex'
         
         evidence.update({
             'symptoms': symptoms,
-            'findings': findings,
+            'diagnoses': diagnoses,
             'sources': [{
                 'type': 'clinical_notes',
                 'symptom_count': len(symptoms),
-                'finding_count': len(findings)
+                'diagnosis_count': len(diagnoses)
             }],
             'metadata': {**evidence.get('metadata', {}), 'extraction_mode': mode}
         })
         
+        # Add summary flags for the rule engine
+        evidence['ischemic_symptoms_present'] = any(s['mi_related'] for s in evidence['symptoms'])
+
         return evidence
-    def _extract_with_llm(self, patient_id: str) -> (List[Dict[str, Any]], List[Dict[str, Any]]):
-        """Use LLM to extract symptoms and findings from notes.
-        Returns (symptoms, findings) lists.
-        """
-        notes = self.notes_loader.get_patient_notes(patient_id)
-        if notes.empty:
-            return [], []
-
-        symptoms: List[Dict[str, Any]] = []
-        findings: List[Dict[str, Any]] = []
-
+    
+    def _extract_with_llm(self, notes: Any) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        """Use LLM to extract symptoms and diagnoses."""
         instructions = (
-            "Extract myocardial infarction (MI) related evidence from the clinical text. "
-            "Return JSON with keys: symptoms (array of objects) and findings (array of objects).\n"
-            "For each symptom: {symptom: string, context: string}.\n"
-            "For each finding: {finding: string, context: string}.\n"
-            "Focus on ischemic symptoms (chest pain/pressure/tightness, radiation to arm/jaw/neck/back/shoulder, "
-            "dyspnea/SOB, diaphoresis, nausea/vomiting, lightheaded/syncope, palpitations, fatigue/weakness, indigestion/epigastric pain) "
-            "and MI-related findings (STEMI/NSTEMI, myocardial infarction, ACS, cardiac ischemia, troponin elevation, "
-            "ST/T changes, Q waves, wall motion abnormality, reduced EF, cardiogenic shock)."
+            "Read the clinical note and extract two types of information in a single JSON object: "
+            "1. A list of ischemic symptoms under the key 'symptoms'. Each object should have 'symptom', 'context', and 'onset_time'. "
+            "2. A list of MI diagnoses under the key 'diagnoses'. Each object should have 'diagnosis' and 'diagnosis_date'."
         )
-
-        # Process each note individually to control prompt size
+        symptoms, diagnoses = [], []
         for _, note in notes.iterrows():
             text = str(note.get('text', ''))
             if not text.strip():
                 continue
             data = self.llm_client.extract_json(instructions, text)
-            note_meta = {
-                'note_type': note.get('note_type', 'Unknown'),
-                'timestamp': note.get('charttime', ''),
-                'note_id': note.get('note_id')
-            }
+            # Process symptoms
             for s in data.get('symptoms', []) or []:
                 symptoms.append({
-                    'symptom': s.get('symptom') or s.get('name') or s.get('text'),
-                    'context': s.get('context', '')[:500],
-                    **note_meta,
+                    'symptom': s.get('symptom'),
+                    'context': s.get('context'),
+                    'onset_time': s.get('onset_time'),
+                    'charttime': note.get('charttime')
                 })
-            for f in data.get('findings', []) or []:
-                findings.append({
-                    'finding': f.get('finding') or f.get('name') or f.get('text'),
-                    'context': f.get('context', '')[:600],
-                    **note_meta,
+            # Process diagnoses
+            for d in data.get('diagnoses', []) or []:
+                diagnoses.append({
+                    'diagnosis': d.get('diagnosis'),
+                    'diagnosis_date': d.get('diagnosis_date'),
+                    'charttime': note.get('charttime')
                 })
-        return symptoms, findings
-    
-    def _extract_symptoms(self, patient_id: str) -> List[Dict[str, Any]]:
-        """Extract MI-related symptoms from clinical notes.
-        
-        Args:
-            patient_id: The ID of the patient
-            
-        Returns:
-            List of symptom findings with context
-        """
-        if not self.notes_loader:
-            return []
-        
-        # Get all notes for the patient
-        notes = self.notes_loader.get_patient_notes(patient_id)
-        if notes.empty:
-            return []
-        
-        symptoms = []
-        processed_texts = set()  # To avoid duplicate processing
-        
+        return symptoms, diagnoses
+
+    def _extract_with_regex(self, notes: Any) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        """Use regex to extract symptoms and diagnoses."""
+        symptoms, diagnoses = [], []
         for _, note in notes.iterrows():
-            text = note.get('text', '').lower()
-            
-            # Skip if we've already processed this text (duplicate notes)
-            if text in processed_texts:
-                continue
-                
-            processed_texts.add(text)
-            
-            # Check each symptom pattern
-            for pattern in self.SYMPTOM_PATTERNS:
-                for match in pattern.finditer(text):
-                    # Get context around the match
-                    start = max(0, match.start() - 100)
-                    end = min(len(text), match.end() + 100)
-                    context = text[start:end].replace('\n', ' ').strip()
-                    
-                    # Clean up the context
-                    context = '...' + context + '...'
-                    
+            text = note.get('text', '')
+            charttime = note.get('charttime')
+
+            # Extract symptoms
+            for pattern_info in self.SYMPTOM_PATTERNS:
+                for match in pattern_info['pattern'].finditer(text):
+                    context = text[max(0, match.start() - 100):min(len(text), match.end() + 100)]
                     symptoms.append({
-                        'symptom': match.group(0).strip(),
-                        'context': context,
-                        'note_type': note.get('note_type', 'Unknown'),
-                        'timestamp': note.get('charttime', ''),
-                        'note_id': note.get('note_id')
+                        'symptom': pattern_info['name'],
+                        'context': context.strip(),
+                        'mi_related': pattern_info['mi_related'],
+                        'charttime': charttime
                     })
-        
-        return symptoms
-    
-    def _extract_findings(self, patient_id: str) -> List[Dict[str, Any]]:
-        """Extract MI-related findings from clinical notes.
-        
-        Args:
-            patient_id: The ID of the patient
-            
-        Returns:
-            List of clinical findings with context
-        """
-        if not self.notes_loader:
-            return []
-        
-        # Get all notes for the patient
-        notes = self.notes_loader.get_patient_notes(patient_id)
-        if notes.empty:
-            return []
-        
-        findings = []
-        processed_texts = set()  # To avoid duplicate processing
-        
-        # Compile regex patterns for findings
-        finding_patterns = [
-            re.compile(r'(?:acute coronary syndrome|acs)', re.IGNORECASE),
-            re.compile(r'(?:st\s*elevation|stemi)', re.IGNORECASE),
-            re.compile(r'(?:non-?st\s*elevation|nstemi)', re.IGNORECASE),
-            re.compile(r'myocardial\s+infarct', re.IGNORECASE),
-            re.compile(r'heart\s+attack', re.IGNORECASE),
-            re.compile(r'cardiac\s+ischemi', re.IGNORECASE),
-            re.compile(r'(?:elevated|positive|elevation of)\s+troponin', re.IGNORECASE),
-            re.compile(r'st\s*[^a-z]\s*elevat', re.IGNORECASE),
-            re.compile(r'st\s*[^a-z]\s*depress', re.IGNORECASE),
-            re.compile(r't\s*wave\s*inver', re.IGNORECASE),
-            re.compile(r'(?:new|pathologic)\s*q\s*waves?', re.IGNORECASE),
-            re.compile(r'wall\s*motion\s*(?:abnormal|hypokinesis|akinesis)', re.IGNORECASE),
-            re.compile(r'ejection\s*fraction\s*(?:of|is)?\s*[<]?\s*\d{1,2}%?', re.IGNORECASE),
-            re.compile(r'ef\s*[<]?\s*\d{1,2}%?', re.IGNORECASE),
-            re.compile(r'cardiogenic\s*shock', re.IGNORECASE)
-        ]
-        
-        for _, note in notes.iterrows():
-            text = note.get('text', '').lower()
-            
-            # Skip if we've already processed this text (duplicate notes)
-            if text in processed_texts:
-                continue
-                
-            processed_texts.add(text)
-            
-            # Check each finding pattern
-            for pattern in finding_patterns:
-                for match in pattern.finditer(text):
-                    # Get context around the match
-                    start = max(0, match.start() - 150)
-                    end = min(len(text), match.end() + 150)
-                    context = text[start:end].replace('\n', ' ').strip()
-                    
-                    # Clean up the context
-                    context = '...' + context + '...'
-                    
-                    findings.append({
-                        'finding': match.group(0).strip(),
-                        'context': context,
-                        'note_type': note.get('note_type', 'Unknown'),
-                        'timestamp': note.get('charttime', ''),
-                        'note_id': note.get('note_id')
+
+            # Extract diagnoses
+            for pattern_info in self.DIAGNOSIS_PATTERNS:
+                for match in pattern_info['pattern'].finditer(text):
+                    context = text[max(0, match.start() - 100):min(len(text), match.end() + 100)]
+                    diagnoses.append({
+                        'diagnosis': pattern_info['name'],
+                        'context': context.strip(),
+                        'diagnosis_date': charttime, # Use note time as proxy
+                        'charttime': charttime
                     })
-        
-        return findings
-    
+
+        return symptoms, diagnoses
+
     def _extract_temporal_info(self, text: str) -> Dict[str, Any]:
         """Extract temporal information from clinical text.
         

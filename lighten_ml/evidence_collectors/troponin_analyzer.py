@@ -1,7 +1,8 @@
 """Troponin analyzer for detecting myocardial infarction patterns."""
 from typing import Dict, List, Any, Optional, Tuple
 import numpy as np
-from datetime import datetime
+from datetime import datetime, timedelta
+from dateutil.parser import parse as date_parse
 from .base_evidence_collector import BaseEvidenceCollector
 
 class TroponinAnalyzer(BaseEvidenceCollector):
@@ -9,28 +10,31 @@ class TroponinAnalyzer(BaseEvidenceCollector):
     
     # Diagnostic threshold for Troponin T in ng/mL
     TROPONIN_THRESHOLD = 0.014
-    
-    def __init__(self, lab_data_loader: Any):
+
+    def __init__(self, lab_data_loader: Any, time_window_hours: int = 72):
         """Initialize the TroponinAnalyzer with a lab data loader.
         
         Args:
             lab_data_loader: Instance of LabDataLoader for accessing lab data
+            time_window_hours: The time window in hours for rise/fall analysis.
         """
         super().__init__(lab_data_loader=lab_data_loader)
-    
-    def collect_evidence(self, patient_id: str) -> Dict[str, Any]:
-        """Collect and analyze troponin evidence for a patient.
+        self.time_window = timedelta(hours=time_window_hours)
+
+    def collect_evidence(self, patient_id: str, hadm_id: str) -> Dict[str, Any]:
+        """Collect and analyze troponin evidence for a specific admission.
         
         Args:
             patient_id: The ID of the patient
+            hadm_id: The ID of the hospital admission
             
         Returns:
             Dictionary containing troponin analysis results
         """
         evidence = self._get_evidence_base()
         
-        # Get all troponin tests for the patient
-        troponin_tests = self.lab_data_loader.get_troponin_tests(patient_id)
+        # Get all troponin tests for the patient's admission
+        troponin_tests = self.lab_data_loader.get_troponin_tests(patient_id, hadm_id)
         
         if troponin_tests.empty:
             evidence['troponin_available'] = False
@@ -73,7 +77,8 @@ class TroponinAnalyzer(BaseEvidenceCollector):
         for _, test in troponin_tests.iterrows():
             try:
                 value = float(test['value'])
-                timestamp = test.get('charttime', None)
+                timestamp_str = test.get('charttime', None)
+                timestamp = date_parse(timestamp_str) if timestamp_str else None
                 
                 # Track maximum value
                 if value > max_value:
@@ -81,7 +86,7 @@ class TroponinAnalyzer(BaseEvidenceCollector):
                 
                 processed.append({
                     'value': value,
-                    'timestamp': timestamp.isoformat() if hasattr(timestamp, 'isoformat') else str(timestamp),
+                    'timestamp': timestamp,
                     'above_threshold': value > self.TROPONIN_THRESHOLD,
                     'test_id': test.get('itemid'),
                     'test_name': test.get('label', 'Troponin T')
@@ -90,7 +95,7 @@ class TroponinAnalyzer(BaseEvidenceCollector):
                 continue
         
         # Sort by timestamp
-        processed.sort(key=lambda x: x.get('timestamp', ''))
+        processed.sort(key=lambda x: x.get('timestamp') or datetime.min)
         
         return {
             'values': processed,
@@ -109,24 +114,20 @@ class TroponinAnalyzer(BaseEvidenceCollector):
         """
         if not troponin_values:
             return False, {'reason': 'No troponin values available'}
-        
-        # Check for single value >5x threshold
-        max_value = max(t['value'] for t in troponin_values)
-        if max_value > 5 * self.TROPONIN_THRESHOLD:
-            return True, {
-                'criteria': 'Single value >5x threshold',
-                'value': max_value,
-                'threshold': 5 * self.TROPONIN_THRESHOLD
-            }
-        
+
+        # A single elevated value can be evidence, but rise/fall is stronger.
+        # The final decision is made by the rule engine, which considers ischemia.
+        has_one_elevated = any(t['above_threshold'] for t in troponin_values)
+
         # Need at least 2 values to check for rise/fall patterns
         if len(troponin_values) < 2:
-            return False, {
-                'reason': 'Insufficient data points for pattern analysis',
-                'required': 2,
+            return has_one_elevated, {
+                'reason': 'Insufficient data for pattern analysis, but at least one value is elevated.'
+                if has_one_elevated else 'Insufficient data for pattern analysis.',
+                'required_for_pattern': 2,
                 'available': len(troponin_values)
             }
-        
+
         # Check for rise pattern
         rise_result = self._check_rise_pattern(troponin_values)
         if rise_result['met']:
@@ -134,7 +135,7 @@ class TroponinAnalyzer(BaseEvidenceCollector):
                 'criteria': 'Rise pattern detected',
                 'details': rise_result
             }
-        
+
         # Check for fall pattern
         fall_result = self._check_fall_pattern(troponin_values)
         if fall_result['met']:
@@ -142,35 +143,39 @@ class TroponinAnalyzer(BaseEvidenceCollector):
                 'criteria': 'Fall pattern detected',
                 'details': fall_result
             }
-        
+
+        # If no pattern, but one value is elevated, report that.
+        if has_one_elevated:
+            return True, {
+                'criteria': 'Single elevated troponin',
+                'reason': 'One or more troponin values were above the threshold, but no rise/fall pattern was confirmed.'
+            }
+
         return False, {'reason': 'No MI criteria met'}
     
     def _check_rise_pattern(self, values: List[Dict]) -> Dict:
-        """Check for rise pattern in troponin values.
-        
-        Args:
-            values: List of processed troponin values
-            
-        Returns:
-            Dictionary with rise pattern analysis
-        """
+        """Check for rise pattern in troponin values within the time window."""
         result = {
             'met': False,
             'pattern': 'rise',
             'details': []
         }
-        
+
         for i in range(1, len(values)):
-            prev = values[i-1]
+            prev = values[i - 1]
             curr = values[i]
-            
-            # Skip if we can't compare these values
-            if 'value' not in prev or 'value' not in curr:
+
+            # Skip if values are missing or timestamps are invalid
+            if 'value' not in prev or 'value' not in curr or not prev['timestamp'] or not curr['timestamp']:
                 continue
-                
+
+            # Check if within the time window
+            if curr['timestamp'] - prev['timestamp'] > self.time_window:
+                continue
+
             prev_val = prev['value']
             curr_val = curr['value']
-            
+
             # Case 1: Baseline below threshold, subsequent above threshold
             if prev_val <= self.TROPONIN_THRESHOLD < curr_val:
                 result['met'] = True
@@ -179,11 +184,11 @@ class TroponinAnalyzer(BaseEvidenceCollector):
                     'from': prev_val,
                     'to': curr_val,
                     'threshold': self.TROPONIN_THRESHOLD,
-                    'indices': (i-1, i)
+                    'indices': (i - 1, i)
                 })
-            
+
             # Case 2: Significant increase from elevated baseline (≥50%)
-            elif (prev_val > self.TROPONIN_THRESHOLD and 
+            elif (prev_val > self.TROPONIN_THRESHOLD and
                   curr_val >= 1.5 * prev_val):
                 result['met'] = True
                 result['details'].append({
@@ -192,40 +197,37 @@ class TroponinAnalyzer(BaseEvidenceCollector):
                     'to': curr_val,
                     'increase_pct': ((curr_val - prev_val) / prev_val) * 100,
                     'threshold_pct': 50,
-                    'indices': (i-1, i)
+                    'indices': (i - 1, i)
                 })
-        
+
         return result
     
     def _check_fall_pattern(self, values: List[Dict]) -> Dict:
-        """Check for fall pattern in troponin values.
-        
-        Args:
-            values: List of processed troponin values
-            
-        Returns:
-            Dictionary with fall pattern analysis
-        """
+        """Check for fall pattern in troponin values within the time window."""
         result = {
             'met': False,
             'pattern': 'fall',
             'details': []
         }
-        
+
         for i in range(1, len(values)):
-            prev = values[i-1]
+            prev = values[i - 1]
             curr = values[i]
-            
-            # Skip if we can't compare these values
-            if 'value' not in prev or 'value' not in curr:
+
+            # Skip if values are missing or timestamps are invalid
+            if 'value' not in prev or 'value' not in curr or not prev['timestamp'] or not curr['timestamp']:
                 continue
-                
+
+            # Check if within the time window
+            if curr['timestamp'] - prev['timestamp'] > self.time_window:
+                continue
+
             prev_val = prev['value']
             curr_val = curr['value']
-            
+
             # Case 1: Peak above threshold with subsequent decline (≥25%)
-            if (prev_val > self.TROPONIN_THRESHOLD and 
-                curr_val <= 0.75 * prev_val):
+            if (prev_val > self.TROPONIN_THRESHOLD and
+                    curr_val <= 0.75 * prev_val):
                 result['met'] = True
                 result['details'].append({
                     'type': 'significant_decline',
@@ -233,20 +235,7 @@ class TroponinAnalyzer(BaseEvidenceCollector):
                     'to': curr_val,
                     'decrease_pct': ((prev_val - curr_val) / prev_val) * 100,
                     'threshold_pct': 25,
-                    'indices': (i-1, i)
+                    'indices': (i - 1, i)
                 })
-            
-            # Case 2: Declining from elevated baseline (≥25% decrease)
-            elif (prev_val > self.TROPONIN_THRESHOLD and 
-                  curr_val <= 0.75 * prev_val):
-                result['met'] = True
-                result['details'].append({
-                    'type': 'declining_from_elevated',
-                    'from': prev_val,
-                    'to': curr_val,
-                    'decrease_pct': ((prev_val - curr_val) / prev_val) * 100,
-                    'threshold_pct': 25,
-                    'indices': (i-1, i)
-                })
-        
+
         return result

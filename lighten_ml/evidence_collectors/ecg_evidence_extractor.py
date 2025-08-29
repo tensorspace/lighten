@@ -68,76 +68,95 @@ class ECGEvidenceExtractor(BaseEvidenceCollector):
         'anteroseptal': ['V1', 'V2', 'V3', 'V4'],
         'anterolateral': ['I', 'aVL', 'V3', 'V4', 'V5', 'V6'],
         'inferolateral': ['II', 'III', 'aVF', 'V5', 'V6'],
-        'inferoposterior': ['II', 'III', 'aVF', 'V7', 'V8', 'V9']
+        'inferoposterior': ['II', 'III', 'aVF', 'V7', 'V8', 'V9'],
+        'posterior': ['V7', 'V8', 'V9']
     }
     
-    def __init__(self, notes_loader: Any, llm_client: Any = None):
+    # Thresholds for validation
+    VALIDATION_THRESHOLDS = {
+        'ST Elevation': {'mm': 1.0},
+        'ST Depression': {'mm': 0.5},
+        'T Wave Inversion': {'mm': 1.0}
+    }
+    
+    def __init__(self, notes_data_loader: Any, llm_client: Optional[Any] = None, max_notes: Optional[int] = None):
         """Initialize the ECG evidence extractor.
         
         Args:
-            notes_loader: Instance of ClinicalNotesLoader for accessing clinical notes
+            notes_data_loader: Instance of ClinicalNotesDataLoader for accessing clinical notes
+            llm_client: Optional instance of the LLM client
+            max_notes: Maximum number of notes to process
         """
-        super().__init__(notes_loader=notes_loader, llm_client=llm_client)
+        super().__init__(notes_data_loader=notes_data_loader, llm_client=llm_client, max_notes=max_notes)
     
-    def collect_evidence(self, patient_id: str) -> Dict[str, Any]:
-        """Collect ECG evidence for a patient.
-        
+    def collect_evidence(self, patient_id: str, hadm_id: str) -> Dict[str, Any]:
+        """Collect ECG evidence from notes for a specific admission.
+
         Args:
             patient_id: The ID of the patient
-            
+            hadm_id: The ID of the hospital admission
+
         Returns:
             Dictionary containing ECG evidence
         """
         evidence = self._get_evidence_base()
-        
-        if not self.notes_loader:
-            evidence['error'] = 'Notes loader not provided'
-            return evidence
-        
-        # Get notes
-        notes = self.notes_loader.get_patient_notes(patient_id)
+        evidence['ecg_findings'] = []
+        evidence['metadata'] = {'extraction_mode': 'none'}
+
+        # Get clinical notes for the admission
+        notes = self.notes_data_loader.get_patient_notes(patient_id, hadm_id)
+
         if notes.empty:
-            evidence['ecg_findings'] = []
-            evidence['metadata'] = {**evidence.get('metadata', {}), 'extraction_mode': 'none_no_notes'}
             return evidence
-        
+
+        # Filter for ECG notes
+        ecg_notes = notes[notes['note_type'] == 'ECG']
+
+        # Limit number of notes if configured
+        if self.max_notes and len(ecg_notes) > self.max_notes:
+            ecg_notes = ecg_notes.head(self.max_notes)
+
+        if ecg_notes.empty:
+            evidence['metadata']['extraction_mode'] = 'none_no_notes'
+            return evidence
+
         # LLM-first with regex fallback
-        try_llm = getattr(self, 'llm_client', None) and isinstance(self.llm_client, LightenLLMClient) and self.llm_client.enabled
-        if try_llm:
+        extracted_with_llm = False
+        if self.llm_client and self.llm_client.enabled:
             try:
-                ecg_findings = self._extract_with_llm(notes)
-                mode = 'llm'
+                llm_findings = self._extract_with_llm(ecg_notes)
+                # Post-process and validate LLM findings
+                ecg_findings = self._post_process_llm_findings(llm_findings)
+                evidence['metadata']['extraction_mode'] = 'llm_validated'
+                extracted_with_llm = True
             except Exception:
-                ecg_findings = self._extract_ecg_findings(notes)
-                mode = 'regex_fallback'
-        else:
-            ecg_findings = self._extract_ecg_findings(notes)
-            mode = 'regex'
-        
-        # Determine if findings meet MI criteria
-        mi_criteria_met, criteria_details = self._check_mi_criteria(ecg_findings)
-        
+                # Fallback to regex if LLM fails
+                pass
+
+        # Fallback to regex if LLM is not used or fails
+        if not extracted_with_llm:
+            evidence['metadata']['extraction_mode'] = 'regex_fallback' if self.llm_client else 'regex'
+            ecg_findings = self._extract_findings_regex(ecg_notes)
+
         evidence.update({
             'ecg_findings': ecg_findings,
-            'mi_criteria_met': mi_criteria_met,
-            'criteria_details': criteria_details,
             'sources': [{
                 'type': 'clinical_notes',
                 'ecg_finding_count': len(ecg_findings)
-            }],
-            'metadata': {**evidence.get('metadata', {}), 'extraction_mode': mode}
+            }]
         })
-        
+
         return evidence
 
     def _extract_with_llm(self, notes: Any) -> List[Dict[str, Any]]:
         """Use LLM to extract ECG findings structured for MI criteria."""
         instructions = (
-            "Read the clinical text and extract ECG-related findings relevant to myocardial infarction. "
-            "Return JSON with key 'ecg_findings' (array of objects) where each object has: "
-            "{finding: string, context: string, leads: array of strings, measurements: object, is_new: boolean}. "
-            "Leads should be like I, II, III, aVR, aVL, aVF, V1..V9. "
-            "Measurements may include: st_elevation_mm, st_elevation_mv, q_wave_duration_ms."
+            "Read the ECG report and extract findings relevant to myocardial infarction. "
+            "Return a JSON object with a single key 'ecg_findings', which is a list of objects. "
+            "Each object must have the following keys: 'finding' (e.g., 'ST Elevation', 'T Wave Inversion'), "
+            "'context' (the sentence where the finding was mentioned), 'leads' (a list of lead names like 'V1', 'aVL'), "
+            "'measurements' (an object with values like {'st_elevation_mm': 1.5}), and 'is_new' (a boolean). "
+            "Focus only on MI-related changes like ST elevation/depression, T wave inversions, and Q waves."
         )
         findings: List[Dict[str, Any]] = []
         for _, note in notes.iterrows():
@@ -146,57 +165,86 @@ class ECGEvidenceExtractor(BaseEvidenceCollector):
                 continue
             data = self.llm_client.extract_json(instructions, text)
             for f in data.get('ecg_findings', []) or []:
-                findings.append({
-                    'finding': f.get('finding'),
-                    'description': f.get('finding'),
-                    'context': (f.get('context') or '')[:600],
-                    'leads': f.get('leads') or [],
-                    'measurements': f.get('measurements') or {},
-                    'is_new': bool(f.get('is_new')),
-                    'note_type': note.get('note_type', 'Unknown'),
-                    'timestamp': note.get('charttime', ''),
+                # Add note metadata to the extracted finding
+                f.update({
+                    'note_type': note.get('note_type', 'ECG'),
+                    'charttime': note.get('charttime', ''),
                     'note_id': note.get('note_id'),
-                    'mi_related': True,
-                    'criteria': ''
                 })
+                findings.append(f)
         return findings
-        
-        # Get all notes for the patient
-        notes = self.notes_loader.get_patient_notes(patient_id)
-        if notes.empty:
-            evidence['ecg_findings'] = []
-            return evidence
-        
-        # Extract ECG findings (LLM first if available)
-        if getattr(self, 'llm_client', None) and isinstance(self.llm_client, LightenLLMClient) and self.llm_client.enabled:
-            try:
-                ecg_findings = self._extract_with_llm(notes)
-                evidence['metadata']['extraction_mode'] = 'llm'
-            except Exception:
-                ecg_findings = self._extract_ecg_findings(notes)
-                evidence['metadata']['extraction_mode'] = 'regex_fallback'
-        else:
-            ecg_findings = self._extract_ecg_findings(notes)
-            evidence['metadata']['extraction_mode'] = 'regex'
-        
-        # Determine if findings meet MI criteria
-        mi_criteria_met, criteria_details = self._check_mi_criteria(ecg_findings)
-        
-        evidence.update({
-            'ecg_findings': ecg_findings,
-            'mi_criteria_met': mi_criteria_met,
-            'criteria_details': criteria_details,
-            'sources': [{
-                'type': 'clinical_notes',
-                'ecg_finding_count': len(ecg_findings)
-            }]
-        })
-        
-        return evidence
-    
-    def _extract_ecg_findings(self, notes: Any) -> List[Dict[str, Any]]:
-        """Extract ECG findings from clinical notes.
-        
+
+    def _post_process_llm_findings(self, llm_findings: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Validate and format findings extracted by the LLM."""
+        validated_findings = []
+        for finding in llm_findings:
+            is_valid, validation_details = self._validate_finding(finding)
+            if is_valid:
+                validated_findings.append({
+                    'finding': finding.get('finding'),
+                    'description': finding.get('finding'),
+                    'context': (finding.get('context') or '')[:600],
+                    'leads': finding.get('leads') or [],
+                    'measurements': finding.get('measurements') or {},
+                    'is_new': bool(finding.get('is_new')),
+                    'note_type': finding.get('note_type', 'ECG'),
+                    'charttime': finding.get('charttime', ''),
+                    'note_id': finding.get('note_id'),
+                    'mi_related': True,  # Assumed from LLM prompt
+                    'validation': validation_details
+                })
+        return validated_findings
+
+    def _validate_finding(self, finding: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
+        """Validate a single ECG finding against clinical rules."""
+        finding_name = finding.get('finding')
+        leads = finding.get('leads', [])
+        measurements = finding.get('measurements', {})
+        is_new = finding.get('is_new', False)
+
+        # Rule 1: Must be a new or presumably new finding for MI criteria
+        if not is_new:
+            return False, {'reason': 'Finding is not new.'}
+
+        # Rule 2: Must be in at least two contiguous leads
+        if not self._are_leads_contiguous(leads):
+            return False, {'reason': f'Leads {leads} are not contiguous.'}
+
+        # Rule 3: Must meet numeric thresholds if applicable
+        thresholds = self.VALIDATION_THRESHOLDS.get(finding_name)
+        if thresholds:
+            if finding_name == 'ST Elevation':
+                value = measurements.get('st_elevation_mm')
+                if value is None or value < thresholds['mm']:
+                    return False, {'reason': f'ST elevation of {value}mm is below threshold of {thresholds["mm"]}mm.'}
+            elif finding_name == 'ST Depression':
+                value = measurements.get('st_depression_mm')
+                if value is None or value < thresholds['mm']:
+                    return False, {'reason': f'ST depression of {value}mm is below threshold of {thresholds["mm"]}mm.'}
+            elif finding_name == 'T Wave Inversion':
+                value = measurements.get('t_wave_inversion_mm')
+                if value is None or value < thresholds['mm']:
+                    return False, {'reason': f'T wave inversion of {value}mm is below threshold of {thresholds["mm"]}mm.'}
+
+        return True, {'status': 'Validated'}
+
+    def _are_leads_contiguous(self, leads: List[str]) -> bool:
+        """Check if at least two leads in the list are contiguous."""
+        if not leads or len(leads) < 2:
+            return False
+
+        lead_set = set(leads)
+        for group_name, group_leads in self.LEAD_GROUPS.items():
+            # Count how many of the finding's leads are in this anatomical group
+            intersection_count = len(lead_set.intersection(group_leads))
+            if intersection_count >= 2:
+                return True
+
+        return False
+
+    def _extract_findings_regex(self, notes: Any) -> List[Dict[str, Any]]:
+        """Extract ECG findings from clinical notes using regex.
+
         Args:
             notes: DataFrame containing clinical notes
             

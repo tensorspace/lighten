@@ -8,6 +8,7 @@ import argparse
 import pandas as pd
 from pathlib import Path
 from tqdm import tqdm
+import random
 
 # Add the project root to the Python path
 sys.path.append(str(Path(__file__).parent))
@@ -24,12 +25,14 @@ def main():
                         help='Path to clinical notes CSV file')
     parser.add_argument('--output-dir', type=str, default='output',
                         help='Directory to save output files')
-    parser.add_argument('--patient', type=str, default=None,
-                        help='Process a specific patient ID')
+    parser.add_argument('--patient-id', type=str, default=None,
+                        help='Process a specific patient ID (subject_id)')
+    parser.add_argument('--hadm-id', type=str, default=None,
+                        help='Process a specific hospital admission ID (hadm_id)')
     parser.add_argument('--sample', type=int, default=None,
-                        help='Process a random sample of N patients')
+                        help='Process a random sample of N admissions')
     parser.add_argument('--all', action='store_true',
-                        help='Process all available patients')
+                        help='Process all available admissions')
     # LLM options
     parser.add_argument('--llm-api-key', type=str, default=None,
                         help='LLM API key (or set TOGETHER_API_KEY/LLM_API_KEY env var)')
@@ -66,62 +69,43 @@ def main():
             }
         )
         
-        # Get patient IDs to process
-        all_patient_ids = pipeline.get_available_patient_ids()
-        
-        if not all_patient_ids:
-            print("No patients found with both lab data and clinical notes.")
+        # Get patient admissions to process
+        all_admissions = pipeline.get_available_admissions()
+
+        if not all_admissions:
+            print("No admissions found with both lab data and clinical notes.")
             sys.exit(1)
-        
-        if args.patient:
-            # Process specific patient
-            if args.patient not in all_patient_ids:
-                print(f"Patient {args.patient} not found in the dataset.")
+
+        if args.hadm_id:
+            admissions_to_process = [(pid, hid) for pid, hid in all_admissions if hid == args.hadm_id]
+            if not admissions_to_process:
+                print(f"Error: Admission ID {args.hadm_id} not found or is missing required data.")
                 sys.exit(1)
-            patient_ids = [args.patient]
+        elif args.patient_id:
+            admissions_to_process = [(pid, hid) for pid, hid in all_admissions if pid == args.patient_id]
+            if not admissions_to_process:
+                print(f"Error: Patient ID {args.patient_id} not found or is missing required data.")
+                sys.exit(1)
         elif args.sample:
-            # Process random sample
-            import random
-            sample_size = min(args.sample, len(all_patient_ids))
-            patient_ids = random.sample(all_patient_ids, sample_size)
+            if args.sample > len(all_admissions):
+                print(f"Warning: Sample size {args.sample} is larger than available admissions ({len(all_admissions)}).")
+                args.sample = len(all_admissions)
+            indices = random.sample(range(len(all_admissions)), args.sample)
+            admissions_to_process = [all_admissions[i] for i in indices]
         elif args.all:
-            # Process all patients
-            patient_ids = all_patient_ids
+            admissions_to_process = all_admissions
         else:
-            # Default: process first patient
-            patient_ids = all_patient_ids[:1]
-        
-        print(f"Processing {len(patient_ids)} patient(s)...")
-        
-        # Process patients
-        results = {}
-        for patient_id in tqdm(patient_ids, desc="Processing patients"):
-            try:
-                result = pipeline.process_patient(patient_id)
-                results[patient_id] = result
-                
-                # Print summary for each patient
-                summary = result.get('summary', {})
-                print(f"\nPatient {patient_id}:")
-                print(f"  MI Detected: {summary.get('mi_detected', 'N/A')}")
-                print(f"  Confidence: {summary.get('confidence', 'N/A'):.2f}")
-                
-                # Print key findings
-                if 'key_findings' in summary:
-                    print("  Key Findings:")
-                    for finding in summary['key_findings']:
-                        print(f"    - {finding.get('category')}: {finding.get('finding')}")
-            
-            except Exception as e:
-                print(f"Error processing patient {patient_id}: {str(e)}")
-        
-        # Save combined results
-        if results:
-            pipeline._save_combined_results(results)
-            print(f"\nResults saved to {os.path.abspath(args.output_dir)}")
-        
+            # Default to processing the first admission if no other option is specified
+            admissions_to_process = all_admissions[:1]
+
+        print(f"Processing {len(admissions_to_process)} admission(s)...")
+        pipeline.process_admissions(admissions_to_process)
+
+        print("Processing complete.")
+        print(f"Results saved to: {args.output_dir}")
+
     except Exception as e:
-        print(f"Error: {str(e)}")
+        print(f"An error occurred during pipeline execution: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":

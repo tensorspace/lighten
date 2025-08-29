@@ -5,14 +5,21 @@ from datetime import datetime
 from typing import Dict, List, Any, Optional, Union, Tuple
 import pandas as pd
 
-from ..data_loaders import LabDataLoader, ClinicalNotesLoader
+from ..data_loaders import (
+    LabDataLoader,
+    ClinicalNotesLoader,
+    AdmissionsLoader
+)
 from ..evidence_collectors import (
     TroponinAnalyzer,
     ClinicalEvidenceExtractor,
-    ECGEvidenceExtractor
+    ECGEvidenceExtractor,
+    ImagingEvidenceExtractor,
+    AngiographyEvidenceExtractor
 )
 from ..rule_engines import MIRuleEngine, MIRuleEngineConfig
 from ..llm_client import LightenLLMClient
+from ..resolvers.onset_date_resolver import OnsetDateResolver
 
 class ClinicalPipeline:
     """Main pipeline for processing clinical data to detect Myocardial Infarction."""
@@ -44,21 +51,36 @@ class ClinicalPipeline:
         # Initialize data loaders
         self.lab_loader = LabDataLoader(lab_events_path, lab_items_path)
         self.notes_loader = ClinicalNotesLoader(clinical_notes_path)
+        self.admissions_loader = None
+        if config['data'].get('admissions_path'):
+            self.admissions_loader = AdmissionsLoader(config['data']['admissions_path'])
         
         # Initialize optional LLM client
         llm_cfg = (self.config or {}).get('llm', {})
         api_key = llm_cfg.get('api_key') or os.environ.get('TOGETHER_API_KEY') or os.environ.get('LLM_API_KEY')
         model = llm_cfg.get('model') or os.environ.get('LLM_MODEL')
         base_url = llm_cfg.get('base_url') or os.environ.get('LLM_BASE_URL')
-        self.llm_client = LightenLLMClient(api_key=api_key, model=model, base_url=base_url) if (api_key or os.environ.get('TOGETHER_API_KEY') or os.environ.get('LLM_API_KEY')) else None
+        self.llm_client = LightenLLMClient(
+            api_key=api_key, 
+            model=model, 
+            base_url=base_url,
+            rate_limit_tps=llm_cfg.get('rate_limit_tps', 5),
+            cache_size=llm_cfg.get('cache_size', 1024)
+        ) if (api_key or os.environ.get('TOGETHER_API_KEY') or os.environ.get('LLM_API_KEY')) else None
 
         # Initialize evidence collectors
-        self.troponin_analyzer = TroponinAnalyzer(self.lab_loader)
-        self.clinical_evidence_extractor = ClinicalEvidenceExtractor(self.notes_loader)
-        # Pass LLM client to note-based extractors if available
-        if self.llm_client is not None:
-            self.clinical_evidence_extractor.llm_client = self.llm_client
-        self.ecg_evidence_extractor = ECGEvidenceExtractor(self.notes_loader, llm_client=self.llm_client)
+        collectors_cfg = self.config.get('evidence_collectors', {})
+        troponin_config = collectors_cfg.get('troponin', {})
+        max_notes = collectors_cfg.get('max_notes_per_admission')
+
+        self.troponin_analyzer = TroponinAnalyzer(
+            self.lab_loader,
+            time_window_hours=troponin_config.get('time_window_hours', 72)
+        )
+        self.clinical_evidence_extractor = ClinicalEvidenceExtractor(self.notes_loader, llm_client=self.llm_client, max_notes=max_notes)
+        self.ecg_evidence_extractor = ECGEvidenceExtractor(self.notes_loader, llm_client=self.llm_client, max_notes=max_notes)
+        self.imaging_evidence_extractor = ImagingEvidenceExtractor(self.notes_loader, llm_client=self.llm_client, max_notes=max_notes)
+        self.angiography_evidence_extractor = AngiographyEvidenceExtractor(self.notes_loader, llm_client=self.llm_client, max_notes=max_notes)
         
         # Initialize rule engine with config
         rule_engine_config = self.config.get('rule_engine', {})
@@ -67,91 +89,117 @@ class ClinicalPipeline:
             if rule_engine_config 
             else None
         )
-        
-        # Cache for patient data
-        self._patient_cache = {}
+
+        # Initialize the onset date resolver
+        self.onset_date_resolver = OnsetDateResolver()
+
+        # Cache for admission data
+        self._admission_cache = {}
     
-    def process_patient(self, patient_id: str) -> Dict[str, Any]:
-        """Process data for a single patient.
+    def get_available_admissions(self) -> List[Tuple[str, str]]:
+        """Get a list of (patient_id, hadm_id) tuples that have both lab and note data."""
+        # These methods will need to be implemented in the loaders
+        lab_admissions = self.lab_loader.get_all_admissions()
+        notes_admissions = self.notes_loader.get_all_admissions()
+
+        # Find the intersection of admissions present in both data sources
+        lab_set = set(lab_admissions)
+        notes_set = set(notes_admissions)
+        common_admissions = sorted(list(lab_set.intersection(notes_set)))
+
+        return common_admissions
+
+    def process_admission(self, patient_id: str, hadm_id: str) -> Dict[str, Any]:
+        """Process data for a single hospital admission.
         
         Args:
             patient_id: The ID of the patient to process
+            hadm_id: The hospital admission ID to process
             
         Returns:
             Dictionary containing processing results
         """
         # Check cache first
-        if patient_id in self._patient_cache:
-            return self._patient_cache[patient_id]
+        if hadm_id in self._admission_cache:
+            return self._admission_cache[hadm_id]
         
         # Initialize result structure
         result = {
             'patient_id': patient_id,
+            'hadm_id': hadm_id,
             'timestamp': datetime.utcnow().isoformat(),
             'evidence': {},
             'results': {}
         }
         
         try:
-            # 1. Collect troponin evidence
-            troponin_evidence = self.troponin_analyzer.collect_evidence(patient_id)
-            result['evidence']['troponin'] = troponin_evidence
+            # 1. Collect all available evidence for the specific admission
+            evidence = self._collect_all_evidence(patient_id, hadm_id)
+            result['evidence'] = evidence
             
-            # 2. Collect clinical evidence from notes
-            clinical_evidence = self.clinical_evidence_extractor.collect_evidence(patient_id)
-            result['evidence']['clinical'] = clinical_evidence
+            # 2. Apply rule engine to evaluate MI
+            rule_result = self.rule_engine.evaluate(evidence)
             
-            # 3. Collect ECG evidence from notes
-            ecg_evidence = self.ecg_evidence_extractor.collect_evidence(patient_id)
-            result['evidence']['ecg'] = ecg_evidence
-            
-            # 4. Apply rule engine to evaluate MI
-            rule_result = self.rule_engine.evaluate({
-                'troponin': troponin_evidence,
-                'symptoms': clinical_evidence.get('symptoms', []),
-                'ecg': ecg_evidence,
-                'imaging': {},  # Placeholder for future imaging integration
-                'angiography': {}  # Placeholder for future angiography integration
-            })
-            
-            # 5. Format results
+            # 3. Determine MI Onset Date
+            onset_date_result = {}
+            if rule_result.passed: # Only resolve onset date if MI is detected
+                # Get admission time as a fallback for onset date
+                admission_time = None
+                if self.admissions_loader:
+                    admission_time = self.admissions_loader.get_admission_time(patient_id, hadm_id)
+
+                onset_date_result = self.onset_date_resolver.resolve(result['evidence'], admission_time=admission_time)
+
+            # 4. Format results
             result['results'] = {
                 'mi_detected': rule_result.passed,
+                'mi_onset_date': onset_date_result.get('onset_date'),
+                'mi_onset_date_rationale': onset_date_result.get('rationale'),
                 'confidence': rule_result.confidence,
                 'details': rule_result.details,
                 'timestamp': rule_result.timestamp
             }
             
-            # 6. Add summary
+            # 5. Add summary
             result['summary'] = self._generate_summary(result)
             
             # Cache the result
-            self._patient_cache[patient_id] = result
+            self._admission_cache[hadm_id] = result
             
             return result
             
         except Exception as e:
-            error_msg = f"Error processing patient {patient_id}: {str(e)}"
+            error_msg = f"Error processing admission {hadm_id} for patient {patient_id}: {str(e)}"
             result['error'] = error_msg
             return result
     
-    def process_patients(self, patient_ids: List[str]) -> Dict[str, Dict[str, Any]]:
-        """Process multiple patients.
+    def _collect_all_evidence(self, patient_id: str, hadm_id: str) -> Dict[str, Any]:
+        """Collect all available evidence for a given admission."""
+        return {
+            'troponin': self.troponin_analyzer.collect_evidence(patient_id, hadm_id),
+            'clinical': self.clinical_evidence_extractor.collect_evidence(patient_id, hadm_id),
+            'ecg': self.ecg_evidence_extractor.collect_evidence(patient_id, hadm_id),
+            'imaging': self.imaging_evidence_extractor.collect_evidence(patient_id, hadm_id),
+            'angiography': self.angiography_evidence_extractor.collect_evidence(patient_id, hadm_id)
+        }
+
+    def process_admissions(self, admissions: List[Tuple[str, str]]) -> Dict[str, Dict[str, Any]]:
+        """Process multiple hospital admissions.
         
         Args:
-            patient_ids: List of patient IDs to process
+            admissions: List of (patient_id, hadm_id) tuples to process
             
         Returns:
-            Dictionary mapping patient IDs to their results
+            Dictionary mapping admission IDs to their results
         """
         results = {}
         
-        for patient_id in patient_ids:
-            result = self.process_patient(patient_id)
-            results[patient_id] = result
+        for patient_id, hadm_id in admissions:
+            result = self.process_admission(patient_id, hadm_id)
+            results[hadm_id] = result
             
-            # Save individual patient result
-            self._save_patient_result(patient_id, result)
+            # Save individual admission result
+            self._save_admission_result(hadm_id, result)
         
         # Save combined results
         self._save_combined_results(results)
@@ -162,14 +210,16 @@ class ClinicalPipeline:
         """Generate a human-readable summary of the results.
         
         Args:
-            result: The processing result for a patient
+            result: The processing result for an admission
             
         Returns:
             Dictionary containing a summary of the results
         """
         summary = {
             'patient_id': result['patient_id'],
+            'hadm_id': result['hadm_id'],
             'mi_detected': result['results']['mi_detected'],
+            'mi_onset_date': result['results'].get('mi_onset_date'),
             'confidence': result['results']['confidence'],
             'key_findings': []
         }
@@ -208,6 +258,28 @@ class ClinicalPipeline:
                     'significance': 'Supports MI diagnosis'
                 })
         
+        # Add imaging findings
+        imaging = result['evidence'].get('imaging', {})
+        if imaging.get('imaging_findings'):
+            mi_related = [f for f in imaging['imaging_findings'] if f.get('mi_related', False)]
+            if mi_related:
+                summary['key_findings'].append({
+                    'category': 'Imaging',
+                    'finding': f"{len(mi_related)} MI-related imaging findings",
+                    'significance': 'Supports MI diagnosis'
+                })
+        
+        # Add angiography findings
+        angiography = result['evidence'].get('angiography', {})
+        if angiography.get('angiography_findings'):
+            mi_related = [f for f in angiography['angiography_findings'] if f.get('mi_related', False)]
+            if mi_related:
+                summary['key_findings'].append({
+                    'category': 'Angiography',
+                    'finding': f"{len(mi_related)} MI-related angiography findings",
+                    'significance': 'Supports MI diagnosis'
+                })
+        
         # Add rule engine details
         details = result['results'].get('details', {})
         criteria_a = details.get('criteria_A', {})
@@ -221,17 +293,17 @@ class ClinicalPipeline:
         
         return summary
     
-    def _save_patient_result(self, patient_id: str, result: Dict[str, Any]) -> str:
-        """Save a single patient's result to a JSON file.
+    def _save_admission_result(self, hadm_id: str, result: Dict[str, Any]) -> str:
+        """Save a single admission's result to a JSON file.
         
         Args:
-            patient_id: The patient ID
+            hadm_id: The admission ID
             result: The processing result
             
         Returns:
             Path to the saved file
         """
-        filename = os.path.join(self.output_dir, f"patient_{patient_id}_results.json")
+        filename = os.path.join(self.output_dir, f"admission_{hadm_id}_results.json")
         
         with open(filename, 'w') as f:
             json.dump(result, f, indent=2)
@@ -242,17 +314,20 @@ class ClinicalPipeline:
         """Save combined results to a JSON file.
         
         Args:
-            results: Dictionary mapping patient IDs to their results
+            results: Dictionary mapping admission IDs to their results
             
         Returns:
             Path to the saved file
         """
-        # Create a simplified summary for all patients
+        # Create a simplified summary for all admissions
         summary = {}
         
-        for patient_id, result in results.items():
-            summary[patient_id] = {
+        for hadm_id, result in results.items():
+            summary[hadm_id] = {
+                'patient_id': result.get('patient_id'),
                 'mi_detected': result.get('results', {}).get('mi_detected', False),
+                'mi_onset_date': result.get('results', {}).get('mi_onset_date'),
+                'mi_onset_date_rationale': result.get('results', {}).get('mi_onset_date_rationale'),
                 'confidence': result.get('results', {}).get('confidence', 0.0),
                 'summary': result.get('summary', {})
             }
@@ -266,10 +341,13 @@ class ClinicalPipeline:
         csv_path = os.path.join(self.output_dir, 'combined_results.csv')
         rows = []
         
-        for patient_id, data in summary.items():
+        for hadm_id, data in summary.items():
             row = {
-                'patient_id': patient_id,
+                'hadm_id': hadm_id,
+                'patient_id': data['patient_id'],
                 'mi_detected': data['mi_detected'],
+                'mi_onset_date': data['mi_onset_date'],
+                'mi_onset_date_rationale': data['mi_onset_date_rationale'],
                 'confidence': data['confidence']
             }
             
@@ -289,24 +367,5 @@ class ClinicalPipeline:
         return json_path, csv_path
     
     def clear_cache(self) -> None:
-        """Clear the patient cache."""
-        self._patient_cache = {}
-    
-    def get_available_patient_ids(self) -> List[str]:
-        """Get a list of available patient IDs from the data loaders.
-        
-        Returns:
-            List of patient IDs
-        """
-        # Get patient IDs with lab data
-        lab_patients = set()
-        if hasattr(self.lab_loader, 'data') and 'subject_id' in self.lab_loader.data.columns:
-            lab_patients = set(self.lab_loader.data['subject_id'].unique())
-        
-        # Get patient IDs with clinical notes
-        notes_patients = set()
-        if hasattr(self.notes_loader, 'data') and 'subject_id' in self.notes_loader.data.columns:
-            notes_patients = set(self.notes_loader.data['subject_id'].unique())
-        
-        # Return intersection of patients with both lab data and notes
-        return sorted(list(lab_patients.intersection(notes_patients)))
+        """Clear the admission cache."""
+        self._admission_cache = {}

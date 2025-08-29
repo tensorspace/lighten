@@ -126,6 +126,56 @@ lighten_ml/
 
 The system's behavior can be customized by modifying the configuration in the `MIRuleEngineConfig` class or by passing a configuration dictionary when initializing the pipeline.
 
+### LLM Configuration
+
+This system can optionally use a Large Language Model (LLM) for more advanced evidence extraction from clinical notes.
+
+#### Enabling the LLM
+
+To enable LLM features, you must provide an API key. The system is configured to use Together.ai by default, but can be pointed to any OpenAI-compatible API.
+
+You can provide the API key in one of three ways:
+1.  Set the `TOGETHER_API_KEY` environment variable.
+2.  Set the `LLM_API_KEY` environment variable.
+3.  Pass it in the pipeline configuration dictionary.
+
+#### Configuration Options
+
+LLM behavior can be configured through environment variables or a configuration dictionary passed to the `ClinicalPipeline`.
+
+##### Environment Variables
+
+-   `TOGETHER_API_KEY` or `LLM_API_KEY`: Your API key.
+-   `LLM_MODEL`: The name of the model to use (e.g., `mistralai/Mixtral-8x7B-Instruct-v0.1`).
+-   `LLM_BASE_URL`: The base URL for the LLM API (e.g., `https://api.together.xyz/v1`).
+
+##### Pipeline Configuration Dictionary
+
+You can pass a configuration dictionary when initializing the `ClinicalPipeline` to customize LLM settings.
+
+```python
+llm_config = {
+    "llm": {
+        "api_key": "YOUR_API_KEY",
+        "model": "mistralai/Mixtral-8x7B-Instruct-v0.1",
+        "base_url": "https://api.together.xyz/v1",
+        "rate_limit_tps": 5,  # Requests per second
+        "cache_size": 1024     # Number of LLM responses to cache
+    },
+    "evidence_collectors": {
+        "max_notes_per_admission": 20 # Max notes to process per admission
+    }
+}
+
+pipeline = ClinicalPipeline(config=llm_config, ...)
+```
+
+-   `rate_limit_tps`: Controls the number of requests per second sent to the LLM API to prevent rate-limiting errors.
+-   `cache_size`: The number of LLM responses to keep in an in-memory cache to avoid redundant API calls for the same note content.
+-   `max_notes_per_admission`: Limits the number of notes processed for each evidence type within a single admission to control cost and latency.
+
+If no API key is provided, the system will gracefully fall back to using regex-based extraction methods.
+
 ## Testing
 
 Run the test suite with:
@@ -197,16 +247,3 @@ The system can be extended to handle additional clinical variables by implementi
 ## License
 
 This project is licensed under the MIT License.
-
-
-
-
-
-
-
-
-
-
-
-
-
