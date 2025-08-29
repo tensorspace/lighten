@@ -116,11 +116,7 @@ class ClinicalEvidenceExtractor(BaseEvidenceCollector):
     FINDING_KEYWORDS = [
         'acute coronary syndrome', 'acs', 'stemi', 'nstemi',
         'myocardial infarction', 'heart attack', 'cardiac ischemia',
-        'elevated troponin', 'positive troponin', 'troponin elevation',
-        'st elevation', 'st depression', 't wave inversion',
-        'new q waves', 'pathologic q waves', 'new st changes',
-        'wall motion abnormality', 'hypokinesis', 'akinesis',
-        'ejection fraction', 'ef\s*[<]?\s*40%?', 'cardiogenic shock'
+        r'ejection fraction', r'ef\s*[<]?\s*40%?', r'cardiogenic shock'
     ]
     
     def __init__(self, notes_data_loader: Any, llm_client: Optional[Any] = None, max_notes: Optional[int] = None):

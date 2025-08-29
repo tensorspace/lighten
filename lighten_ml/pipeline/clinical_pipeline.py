@@ -7,8 +7,7 @@ import pandas as pd
 
 from ..data_loaders import (
     LabDataLoader,
-    ClinicalNotesLoader,
-    AdmissionsLoader
+    ClinicalNotesLoader
 )
 from ..evidence_collectors import (
     TroponinAnalyzer,
@@ -51,9 +50,6 @@ class ClinicalPipeline:
         # Initialize data loaders
         self.lab_loader = LabDataLoader(lab_events_path, lab_items_path)
         self.notes_loader = ClinicalNotesLoader(clinical_notes_path)
-        self.admissions_loader = None
-        if config['data'].get('admissions_path'):
-            self.admissions_loader = AdmissionsLoader(config['data']['admissions_path'])
         
         # Initialize optional LLM client
         llm_cfg = (self.config or {}).get('llm', {})
@@ -144,9 +140,7 @@ class ClinicalPipeline:
             onset_date_result = {}
             if rule_result.passed: # Only resolve onset date if MI is detected
                 # Get admission time as a fallback for onset date
-                admission_time = None
-                if self.admissions_loader:
-                    admission_time = self.admissions_loader.get_admission_time(patient_id, hadm_id)
+                admission_time = self._get_earliest_admission_timestamp(patient_id, hadm_id)
 
                 onset_date_result = self.onset_date_resolver.resolve(result['evidence'], admission_time=admission_time)
 
@@ -182,6 +176,16 @@ class ClinicalPipeline:
             'imaging': self.imaging_evidence_extractor.collect_evidence(patient_id, hadm_id),
             'angiography': self.angiography_evidence_extractor.collect_evidence(patient_id, hadm_id)
         }
+
+    def _get_earliest_admission_timestamp(self, patient_id: str, hadm_id: str) -> Optional[pd.Timestamp]:
+        """Get the earliest timestamp for an admission from labs and notes."""
+        earliest_lab_time = self.lab_loader.get_earliest_timestamp(patient_id, hadm_id)
+        earliest_note_time = self.notes_loader.get_earliest_timestamp(patient_id, hadm_id)
+
+        if earliest_lab_time and earliest_note_time:
+            return min(earliest_lab_time, earliest_note_time)
+        
+        return earliest_lab_time or earliest_note_time
 
     def process_admissions(self, admissions: List[Tuple[str, str]]) -> Dict[str, Dict[str, Any]]:
         """Process multiple hospital admissions.

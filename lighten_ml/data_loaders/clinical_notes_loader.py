@@ -114,6 +114,21 @@ class ClinicalNotesLoader(BaseDataLoader):
             'notes': notes.to_dict('records') if not notes.empty else []
         }
 
+    def get_earliest_timestamp(self, patient_id: str, hadm_id: str) -> Optional[pd.Timestamp]:
+        """Get the earliest charttime for a given admission."""
+        if self.data is None:
+            self.load_data()
+
+        admission_notes = self.data[
+            (self.data['subject_id'] == patient_id) &
+            (self.data['hadm_id'] == hadm_id)
+        ]
+
+        if not admission_notes.empty and 'charttime' in admission_notes.columns:
+            return admission_notes['charttime'].min()
+        
+        return None
+
     def get_all_admissions(self) -> List[Tuple[str, str]]:
         """Get all unique (patient_id, hadm_id) tuples from the notes data.
 
