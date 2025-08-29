@@ -311,17 +311,16 @@ class ClinicalPipeline:
         return filename
     
     def _save_combined_results(self, results: Dict[str, Dict[str, Any]]) -> str:
-        """Save combined results to a JSON file.
+        """Save combined results to JSON and CSV files.
         
         Args:
             results: Dictionary mapping admission IDs to their results
             
         Returns:
-            Path to the saved file
+            Paths to the saved files
         """
-        # Create a simplified summary for all admissions
+        # --- Save Simplified Summary (JSON and CSV) --- 
         summary = {}
-        
         for hadm_id, result in results.items():
             summary[hadm_id] = {
                 'patient_id': result.get('patient_id'),
@@ -332,15 +331,44 @@ class ClinicalPipeline:
                 'summary': result.get('summary', {})
             }
         
-        # Save to JSON
         json_path = os.path.join(self.output_dir, 'combined_results.json')
         with open(json_path, 'w') as f:
             json.dump(summary, f, indent=2)
         
-        # Save to CSV
+        # --- Save Requirement-Compliant Nested JSON --- 
+        requirement_output = {}
+        for hadm_id, result in results.items():
+            patient_id = str(result.get('patient_id'))
+            if not patient_id:
+                continue
+
+            if patient_id not in requirement_output:
+                requirement_output[patient_id] = {"Myocardial Infarction": []}
+            
+            mi_detected = result.get('results', {}).get('mi_detected', False)
+            onset_date = result.get('results', {}).get('mi_onset_date')
+            
+            # For this example, we assume no complex child variables like 'Symptoms'
+            # as they were not part of the core MI implementation.
+            mi_date_entry = {
+                "value": onset_date,
+                # "Symptoms": [] # Placeholder for future extension
+            }
+            
+            mi_entry = {
+                "value": "Y" if mi_detected else "N",
+                "Myocardial Infarction Onset Date": [mi_date_entry]
+            }
+            
+            requirement_output[patient_id]["Myocardial Infarction"].append(mi_entry)
+
+        requirement_json_path = os.path.join(self.output_dir, 'requirement_compliant_output.json')
+        with open(requirement_json_path, 'w') as f:
+            json.dump(requirement_output, f, indent=4)
+
+        # --- Save to CSV --- 
         csv_path = os.path.join(self.output_dir, 'combined_results.csv')
         rows = []
-        
         for hadm_id, data in summary.items():
             row = {
                 'hadm_id': hadm_id,
@@ -351,7 +379,6 @@ class ClinicalPipeline:
                 'confidence': data['confidence']
             }
             
-            # Add key findings as a string
             findings = data.get('summary', {}).get('key_findings', [])
             row['key_findings'] = '; '.join(
                 f"{f.get('category', '')}: {f.get('finding', '')}" 
@@ -364,7 +391,7 @@ class ClinicalPipeline:
             df = pd.DataFrame(rows)
             df.to_csv(csv_path, index=False)
         
-        return json_path, csv_path
+        return json_path, csv_path, requirement_json_path
     
     def clear_cache(self) -> None:
         """Clear the admission cache."""
