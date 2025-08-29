@@ -2,6 +2,9 @@
 from typing import Dict, List, Any, Optional, Tuple
 import pandas as pd
 from .base_loader import BaseDataLoader
+import logging
+
+logger = logging.getLogger(__name__)
 
 class ClinicalNotesLoader(BaseDataLoader):
     """Load and process clinical notes."""
@@ -17,17 +20,27 @@ class ClinicalNotesLoader(BaseDataLoader):
 
     def load_data(self) -> None:
         """Load and preprocess clinical notes."""
-        # Load notes data
-        self.data = pd.read_csv(
-            self.file_path,
-            usecols=lambda x: x in self.notes_columns,
-            parse_dates=['charttime'],
-            dtype={'subject_id': str, 'hadm_id': str}
-        )
+        if self.data is not None:
+            return
 
-        # Clean text data
-        if 'text' in self.data.columns:
-            self.data['text'] = self.data['text'].fillna('').astype(str)
+        logger.info(f"Loading clinical notes from {self.file_path}...")
+        try:
+            # Load notes data
+            self.data = pd.read_csv(
+                self.file_path,
+                usecols=lambda x: x in self.notes_columns,
+                parse_dates=['charttime'],
+                dtype={'subject_id': str, 'hadm_id': str}
+            )
+
+            # Clean text data
+            if 'text' in self.data.columns:
+                self.data['text'] = self.data['text'].fillna('').astype(str)
+
+            logger.info("Clinical notes loaded successfully.")
+        except FileNotFoundError:
+            logger.error(f"Clinical notes file not found at {self.file_path}")
+            self.data = pd.DataFrame()
 
     def get_patient_notes(self, patient_id: str, hadm_id: Optional[str] = None) -> pd.DataFrame:
         """Get all clinical notes for a specific patient, optionally filtered by admission.

@@ -10,6 +10,7 @@ from pathlib import Path
 from tqdm import tqdm
 import random
 from dotenv import load_dotenv
+import logging
 
 # Add the project root to the Python path
 sys.path.append(str(Path(__file__).parent))
@@ -17,7 +18,16 @@ sys.path.append(str(Path(__file__).parent))
 from lighten_ml.pipeline import ClinicalPipeline
 
 def main():
+    """Main entry point for the script."""
     load_dotenv()  # Load environment variables from .env file
+
+    # Set up logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - [%(name)s] - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+
     parser = argparse.ArgumentParser(description='Process clinical data for MI detection')
     parser.add_argument('--lab-events', type=str, default='labevents.csv',
                         help='Path to lab events CSV file')

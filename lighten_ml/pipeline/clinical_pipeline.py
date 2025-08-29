@@ -4,6 +4,7 @@ import json
 from datetime import datetime
 from typing import Dict, List, Any, Optional, Union, Tuple
 import pandas as pd
+import logging
 
 from ..data_loaders import (
     LabDataLoader,
@@ -19,6 +20,8 @@ from ..evidence_collectors import (
 from ..rule_engines import MIRuleEngine, MIRuleEngineConfig
 from ..llm_client import LightenLLMClient
 from ..resolvers.onset_date_resolver import OnsetDateResolver
+
+logger = logging.getLogger(__name__)
 
 class CustomJSONEncoder(json.JSONEncoder):
     """Custom JSON encoder to handle special types like pandas Timestamps."""
@@ -40,15 +43,7 @@ class ClinicalPipeline:
                  clinical_notes_path: str,
                  output_dir: str = 'output',
                  config: Optional[Dict[str, Any]] = None):
-        """Initialize the clinical pipeline.
-        
-        Args:
-            lab_events_path: Path to the lab events CSV file
-            lab_items_path: Path to the lab items dictionary CSV file
-            clinical_notes_path: Path to the clinical notes CSV file
-            output_dir: Directory to save output files
-            config: Optional configuration dictionary
-        """
+        logger.info("Initializing Lighten ML Clinical Pipeline...")
         self.lab_events_path = lab_events_path
         self.lab_items_path = lab_items_path
         self.clinical_notes_path = clinical_notes_path
@@ -102,7 +97,9 @@ class ClinicalPipeline:
 
         # Cache for admission data
         self._admission_cache = {}
-    
+        
+        logger.info("Pipeline initialized successfully.")
+
     def get_available_admissions(self) -> List[Tuple[str, str]]:
         """Get a list of (patient_id, hadm_id) tuples that have both lab and note data."""
         # These methods will need to be implemented in the loaders
@@ -126,6 +123,7 @@ class ClinicalPipeline:
         Returns:
             Dictionary containing processing results
         """
+        logger.info(f"Processing admission hadm_id={hadm_id} for patient_id={patient_id}")
         # Check cache first
         if hadm_id in self._admission_cache:
             return self._admission_cache[hadm_id]
@@ -141,19 +139,25 @@ class ClinicalPipeline:
         
         try:
             # 1. Collect all available evidence for the specific admission
+            logger.debug(f"[{hadm_id}] Collecting evidence...")
             evidence = self._collect_all_evidence(patient_id, hadm_id)
             result['evidence'] = evidence
-            
+            logger.debug(f"[{hadm_id}] Evidence collection complete.")
+
             # 2. Apply rule engine to evaluate MI
+            logger.debug(f"[{hadm_id}] Evaluating MI rules...")
             rule_result = self.rule_engine.evaluate(evidence)
+            logger.info(f"[{hadm_id}] MI Rule Engine Result: {'PASSED' if rule_result.passed else 'FAILED'}. Rationale: {rule_result.rationale}")
             
             # 3. Determine MI Onset Date
             onset_date_result = {}
             if rule_result.passed: # Only resolve onset date if MI is detected
+                logger.debug(f"[{hadm_id}] Resolving MI onset date...")
                 # Get admission time as a fallback for onset date
                 admission_time = self._get_earliest_admission_timestamp(patient_id, hadm_id)
 
                 onset_date_result = self.onset_date_resolver.resolve(result['evidence'], admission_time=admission_time)
+                logger.info(f"[{hadm_id}] MI Onset Date Resolved: {onset_date_result.get('onset_date')} (Rationale: {onset_date_result.get('rationale')})")
 
             # 4. Format results
             result['results'] = {
@@ -171,6 +175,7 @@ class ClinicalPipeline:
             # Cache the result
             self._admission_cache[hadm_id] = result
             
+            logger.info(f"Finished processing admission hadm_id={hadm_id}.")
             return result
             
         except Exception as e:
@@ -400,6 +405,8 @@ class ClinicalPipeline:
             df = pd.DataFrame(rows)
             df.to_csv(csv_path, index=False)
         
+        logger.info(f"Combined results saved to {json_path} and {csv_path}")
+        logger.info(f"Requirement-compliant output saved to {requirement_json_path}")
         return json_path, csv_path, requirement_json_path
     
     def clear_cache(self) -> None:

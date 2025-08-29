@@ -1,7 +1,10 @@
 """Lab data loading and processing."""
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Any, Optional, Tuple
 import pandas as pd
 from .base_loader import BaseDataLoader
+import logging
+
+logger = logging.getLogger(__name__)
 
 class LabDataLoader(BaseDataLoader):
     """Load and process laboratory test results."""
@@ -20,8 +23,13 @@ class LabDataLoader(BaseDataLoader):
     
     def load_data(self) -> None:
         """Load and preprocess lab data."""
-        # Load lab items mapping
-        self.lab_items = pd.read_csv(self.d_labitems_path)
+        logger.info(f"Loading lab events from {self.lab_events_path}...")
+        try:
+            # Load lab items mapping
+            self.lab_items = pd.read_csv(self.d_labitems_path)
+        except FileNotFoundError:
+            logger.error(f"Lab items file not found at {self.d_labitems_path}")
+            self.lab_items = pd.DataFrame()
 
         # Define dtypes for ID columns
         dtypes = {'subject_id': str, 'hadm_id': str}
@@ -43,6 +51,8 @@ class LabDataLoader(BaseDataLoader):
         # Convert charttime to datetime
         if 'charttime' in self.data.columns:
             self.data['charttime'] = pd.to_datetime(self.data['charttime'])
+
+        logger.info("Lab data loaded successfully.")
 
     def get_patient_data(self, patient_id: str, hadm_id: Optional[str] = None) -> Dict[str, Any]:
         """Get lab data for a specific patient and admission.

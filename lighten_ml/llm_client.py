@@ -40,6 +40,10 @@ class TokenBucket:
             return True
         return False
 
+    def wait_for_token(self):
+        while not self.consume():
+            time.sleep(0.1)
+
 class LightenLLMClient:
     def __init__(
         self,
@@ -58,7 +62,7 @@ class LightenLLMClient:
 
         # Initialize rate limiter and cache
         self.rate_limiter = TokenBucket(rate_limit_tps, rate_limit_tps)
-        self.cache = {}
+        self.cache: Dict[str, Any] = {}
         self.cache_size = cache_size
 
     @property
@@ -93,11 +97,12 @@ class LightenLLMClient:
         # Check cache first
         cache_key = self._get_cache_key(json.dumps(messages), "")
         if cache_key in self.cache:
+            logger.info(f"LLM response found in cache for model {self.model}.")
             return self.cache[cache_key]
 
         # Wait for rate limiter
-        while not self.rate_limiter.consume():
-            time.sleep(0.1)
+        logger.info(f"Waiting for rate limiter for model {self.model}...")
+        self.rate_limiter.wait_for_token()
 
         url = f"{self.base_url.rstrip('/')}/chat/completions"
         payload: Dict[str, Any] = {
@@ -109,27 +114,30 @@ class LightenLLMClient:
         if response_format is not None:
             payload["response_format"] = response_format
 
+        logger.info(f"Sending request to LLM API (model: {self.model})...")
+        
         last_exc: Optional[Exception] = None
         for attempt in range(retries + 1):
             try:
                 resp = requests.post(url, headers=self._headers(), json=payload, timeout=self.timeout)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    result = data["choices"][0]["message"]["content"]
+                resp.raise_for_status()  # Raise an exception for bad status codes
+                
+                logger.info("LLM API request successful.")
+                data = resp.json()
+                result = data["choices"][0]["message"]["content"]
 
-                    # Update cache
-                    if len(self.cache) >= self.cache_size:
-                        self.cache.pop(next(iter(self.cache))) # Remove oldest item
-                    self.cache[cache_key] = result
+                # Update cache
+                if len(self.cache) >= self.cache_size:
+                    self.cache.pop(next(iter(self.cache))) # Remove oldest item
+                self.cache[cache_key] = result
 
-                    return result
-                else:
-                    last_exc = RuntimeError(f"LLM HTTP {resp.status_code}: {resp.text[:500]}")
-            except Exception as e:  # noqa: BLE001
-                last_exc = e
-            time.sleep(retry_delay)
-        assert last_exc is not None
-        raise last_exc
+                return result
+            except requests.exceptions.RequestException as e:
+                logger.warning(f"LLM API request failed (attempt {attempt + 1}/{retries}): {e}")
+                time.sleep(retry_delay * (2 ** attempt)) # Exponential backoff
+        
+        logger.error(f"LLM API request failed after {retries} retries.")
+        raise RuntimeError(f"LLM API request failed after {retries} retries.")
 
     def extract_json(self, instructions: str, text: str, schema_hint: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Ask the LLM to extract structured JSON from text.
