@@ -20,6 +20,17 @@ from ..rule_engines import MIRuleEngine, MIRuleEngineConfig
 from ..llm_client import LightenLLMClient
 from ..resolvers.onset_date_resolver import OnsetDateResolver
 
+class CustomJSONEncoder(json.JSONEncoder):
+    """Custom JSON encoder to handle special types like pandas Timestamps."""
+    def default(self, obj: Any) -> Any:
+        if isinstance(obj, pd.Timestamp):
+            return obj.isoformat()
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        # Let the base class default method raise the TypeError
+        return json.JSONEncoder.default(self, obj)
+
+
 class ClinicalPipeline:
     """Main pipeline for processing clinical data to detect Myocardial Infarction."""
     
@@ -310,7 +321,7 @@ class ClinicalPipeline:
         filename = os.path.join(self.output_dir, f"admission_{hadm_id}_results.json")
         
         with open(filename, 'w') as f:
-            json.dump(result, f, indent=2)
+            json.dump(result, f, indent=2, cls=CustomJSONEncoder)
         
         return filename
     
@@ -337,38 +348,32 @@ class ClinicalPipeline:
         
         json_path = os.path.join(self.output_dir, 'combined_results.json')
         with open(json_path, 'w') as f:
-            json.dump(summary, f, indent=2)
+            json.dump(summary, f, indent=2, cls=CustomJSONEncoder)
         
         # --- Save Requirement-Compliant Nested JSON --- 
         requirement_output = {}
         for hadm_id, result in results.items():
-            patient_id = str(result.get('patient_id'))
-            if not patient_id:
-                continue
-
+            patient_id = result['patient_id']
             if patient_id not in requirement_output:
-                requirement_output[patient_id] = {"Myocardial Infarction": []}
+                requirement_output[patient_id] = {}
             
-            mi_detected = result.get('results', {}).get('mi_detected', False)
-            onset_date = result.get('results', {}).get('mi_onset_date')
+            mi_result = result['results'].get('mi_detected', 'NO')
+            onset_date_result = result['results'].get('mi_onset_date')
             
-            # For this example, we assume no complex child variables like 'Symptoms'
-            # as they were not part of the core MI implementation.
-            mi_date_entry = {
-                "value": onset_date,
-                # "Symptoms": [] # Placeholder for future extension
-            }
-            
-            mi_entry = {
-                "value": "Y" if mi_detected else "N",
-                "Myocardial Infarction Onset Date": [mi_date_entry]
-            }
-            
-            requirement_output[patient_id]["Myocardial Infarction"].append(mi_entry)
+            # Use the most definitive MI result for a patient
+            if mi_result or requirement_output[patient_id].get('Myocardial Infarction') != 'YES':
+                requirement_output[patient_id]['Myocardial Infarction'] = 'YES' if mi_result else 'NO'
+                
+                onset_date_iso = onset_date_result if onset_date_result else None
+                if onset_date_iso:
+                    # Format to YYYY-MM-DD for the final output, matching the requirement
+                    requirement_output[patient_id]['Myocardial Infarction Onset Date'] = pd.to_datetime(onset_date_iso).strftime('%Y-%m-%d')
+                else:
+                    requirement_output[patient_id]['Myocardial Infarction Onset Date'] = None
 
         requirement_json_path = os.path.join(self.output_dir, 'requirement_compliant_output.json')
         with open(requirement_json_path, 'w') as f:
-            json.dump(requirement_output, f, indent=4)
+            json.dump(requirement_output, f, indent=4, cls=CustomJSONEncoder)
 
         # --- Save to CSV --- 
         csv_path = os.path.join(self.output_dir, 'combined_results.csv')

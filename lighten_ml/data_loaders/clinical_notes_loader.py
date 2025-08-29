@@ -22,7 +22,6 @@ class ClinicalNotesLoader(BaseDataLoader):
             self.file_path,
             usecols=lambda x: x in self.notes_columns,
             parse_dates=['charttime'],
-            infer_datetime_format=True,
             dtype={'subject_id': str, 'hadm_id': str}
         )
 
