@@ -12,6 +12,7 @@ from ..evidence_collectors import (
     ECGEvidenceExtractor
 )
 from ..rule_engines import MIRuleEngine, MIRuleEngineConfig
+from ..llm_client import LightenLLMClient
 
 class ClinicalPipeline:
     """Main pipeline for processing clinical data to detect Myocardial Infarction."""
@@ -44,10 +45,20 @@ class ClinicalPipeline:
         self.lab_loader = LabDataLoader(lab_events_path, lab_items_path)
         self.notes_loader = ClinicalNotesLoader(clinical_notes_path)
         
+        # Initialize optional LLM client
+        llm_cfg = (self.config or {}).get('llm', {})
+        api_key = llm_cfg.get('api_key') or os.environ.get('TOGETHER_API_KEY') or os.environ.get('LLM_API_KEY')
+        model = llm_cfg.get('model') or os.environ.get('LLM_MODEL')
+        base_url = llm_cfg.get('base_url') or os.environ.get('LLM_BASE_URL')
+        self.llm_client = LightenLLMClient(api_key=api_key, model=model, base_url=base_url) if (api_key or os.environ.get('TOGETHER_API_KEY') or os.environ.get('LLM_API_KEY')) else None
+
         # Initialize evidence collectors
         self.troponin_analyzer = TroponinAnalyzer(self.lab_loader)
         self.clinical_evidence_extractor = ClinicalEvidenceExtractor(self.notes_loader)
-        self.ecg_evidence_extractor = ECGEvidenceExtractor(self.notes_loader)
+        # Pass LLM client to note-based extractors if available
+        if self.llm_client is not None:
+            self.clinical_evidence_extractor.llm_client = self.llm_client
+        self.ecg_evidence_extractor = ECGEvidenceExtractor(self.notes_loader, llm_client=self.llm_client)
         
         # Initialize rule engine with config
         rule_engine_config = self.config.get('rule_engine', {})

@@ -6,15 +6,17 @@ from datetime import datetime
 class BaseEvidenceCollector(ABC):
     """Abstract base class for all evidence collectors."""
     
-    def __init__(self, lab_data_loader: Any = None, notes_loader: Any = None):
+    def __init__(self, lab_data_loader: Any = None, notes_loader: Any = None, llm_client: Any = None):
         """Initialize the evidence collector with optional data loaders.
         
         Args:
             lab_data_loader: Instance of LabDataLoader for accessing lab data
             notes_loader: Instance of ClinicalNotesLoader for accessing clinical notes
+            llm_client: Optional LightenLLMClient for LLM-based reasoning
         """
         self.lab_data_loader = lab_data_loader
         self.notes_loader = notes_loader
+        self.llm_client = llm_client
     
     @abstractmethod
     def collect_evidence(self, patient_id: str) -> Dict[str, Any]:

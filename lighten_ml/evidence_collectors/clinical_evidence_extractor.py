@@ -3,6 +3,7 @@ from typing import Dict, List, Any, Set, Optional
 import re
 from datetime import datetime
 from .base_evidence_collector import BaseEvidenceCollector
+from ..llm_client import LightenLLMClient
 
 class ClinicalEvidenceExtractor(BaseEvidenceCollector):
     """Extracts clinical evidence of myocardial infarction from notes."""
@@ -74,10 +75,20 @@ class ClinicalEvidenceExtractor(BaseEvidenceCollector):
         if not self.notes_loader:
             evidence['error'] = 'Notes loader not provided'
             return evidence
-        
-        # Search for symptoms and findings in notes
-        symptoms = self._extract_symptoms(patient_id)
-        findings = self._extract_findings(patient_id)
+        # If LLM is enabled, prefer LLM-based extraction with regex fallback
+        try_llm = getattr(self, 'llm_client', None) and isinstance(self.llm_client, LightenLLMClient) and self.llm_client.enabled
+        if try_llm:
+            try:
+                symptoms, findings = self._extract_with_llm(patient_id)
+                mode = 'llm'
+            except Exception:
+                symptoms = self._extract_symptoms(patient_id)
+                findings = self._extract_findings(patient_id)
+                mode = 'regex_fallback'
+        else:
+            symptoms = self._extract_symptoms(patient_id)
+            findings = self._extract_findings(patient_id)
+            mode = 'regex'
         
         evidence.update({
             'symptoms': symptoms,
@@ -86,10 +97,57 @@ class ClinicalEvidenceExtractor(BaseEvidenceCollector):
                 'type': 'clinical_notes',
                 'symptom_count': len(symptoms),
                 'finding_count': len(findings)
-            }]
+            }],
+            'metadata': {**evidence.get('metadata', {}), 'extraction_mode': mode}
         })
         
         return evidence
+    def _extract_with_llm(self, patient_id: str) -> (List[Dict[str, Any]], List[Dict[str, Any]]):
+        """Use LLM to extract symptoms and findings from notes.
+        Returns (symptoms, findings) lists.
+        """
+        notes = self.notes_loader.get_patient_notes(patient_id)
+        if notes.empty:
+            return [], []
+
+        symptoms: List[Dict[str, Any]] = []
+        findings: List[Dict[str, Any]] = []
+
+        instructions = (
+            "Extract myocardial infarction (MI) related evidence from the clinical text. "
+            "Return JSON with keys: symptoms (array of objects) and findings (array of objects).\n"
+            "For each symptom: {symptom: string, context: string}.\n"
+            "For each finding: {finding: string, context: string}.\n"
+            "Focus on ischemic symptoms (chest pain/pressure/tightness, radiation to arm/jaw/neck/back/shoulder, "
+            "dyspnea/SOB, diaphoresis, nausea/vomiting, lightheaded/syncope, palpitations, fatigue/weakness, indigestion/epigastric pain) "
+            "and MI-related findings (STEMI/NSTEMI, myocardial infarction, ACS, cardiac ischemia, troponin elevation, "
+            "ST/T changes, Q waves, wall motion abnormality, reduced EF, cardiogenic shock)."
+        )
+
+        # Process each note individually to control prompt size
+        for _, note in notes.iterrows():
+            text = str(note.get('text', ''))
+            if not text.strip():
+                continue
+            data = self.llm_client.extract_json(instructions, text)
+            note_meta = {
+                'note_type': note.get('note_type', 'Unknown'),
+                'timestamp': note.get('charttime', ''),
+                'note_id': note.get('note_id')
+            }
+            for s in data.get('symptoms', []) or []:
+                symptoms.append({
+                    'symptom': s.get('symptom') or s.get('name') or s.get('text'),
+                    'context': s.get('context', '')[:500],
+                    **note_meta,
+                })
+            for f in data.get('findings', []) or []:
+                findings.append({
+                    'finding': f.get('finding') or f.get('name') or f.get('text'),
+                    'context': f.get('context', '')[:600],
+                    **note_meta,
+                })
+        return symptoms, findings
     
     def _extract_symptoms(self, patient_id: str) -> List[Dict[str, Any]]:
         """Extract MI-related symptoms from clinical notes.

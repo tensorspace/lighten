@@ -3,6 +3,7 @@ from typing import Dict, List, Any, Optional, Tuple
 import re
 from datetime import datetime
 from .base_evidence_collector import BaseEvidenceCollector
+from ..llm_client import LightenLLMClient
 
 class ECGEvidenceExtractor(BaseEvidenceCollector):
     """Extracts ECG evidence related to myocardial infarction."""
@@ -70,13 +71,13 @@ class ECGEvidenceExtractor(BaseEvidenceCollector):
         'inferoposterior': ['II', 'III', 'aVF', 'V7', 'V8', 'V9']
     }
     
-    def __init__(self, notes_loader: Any):
+    def __init__(self, notes_loader: Any, llm_client: Any = None):
         """Initialize the ECG evidence extractor.
         
         Args:
             notes_loader: Instance of ClinicalNotesLoader for accessing clinical notes
         """
-        super().__init__(notes_loader=notes_loader)
+        super().__init__(notes_loader=notes_loader, llm_client=llm_client)
     
     def collect_evidence(self, patient_id: str) -> Dict[str, Any]:
         """Collect ECG evidence for a patient.
@@ -93,14 +94,90 @@ class ECGEvidenceExtractor(BaseEvidenceCollector):
             evidence['error'] = 'Notes loader not provided'
             return evidence
         
+        # Get notes
+        notes = self.notes_loader.get_patient_notes(patient_id)
+        if notes.empty:
+            evidence['ecg_findings'] = []
+            evidence['metadata'] = {**evidence.get('metadata', {}), 'extraction_mode': 'none_no_notes'}
+            return evidence
+        
+        # LLM-first with regex fallback
+        try_llm = getattr(self, 'llm_client', None) and isinstance(self.llm_client, LightenLLMClient) and self.llm_client.enabled
+        if try_llm:
+            try:
+                ecg_findings = self._extract_with_llm(notes)
+                mode = 'llm'
+            except Exception:
+                ecg_findings = self._extract_ecg_findings(notes)
+                mode = 'regex_fallback'
+        else:
+            ecg_findings = self._extract_ecg_findings(notes)
+            mode = 'regex'
+        
+        # Determine if findings meet MI criteria
+        mi_criteria_met, criteria_details = self._check_mi_criteria(ecg_findings)
+        
+        evidence.update({
+            'ecg_findings': ecg_findings,
+            'mi_criteria_met': mi_criteria_met,
+            'criteria_details': criteria_details,
+            'sources': [{
+                'type': 'clinical_notes',
+                'ecg_finding_count': len(ecg_findings)
+            }],
+            'metadata': {**evidence.get('metadata', {}), 'extraction_mode': mode}
+        })
+        
+        return evidence
+
+    def _extract_with_llm(self, notes: Any) -> List[Dict[str, Any]]:
+        """Use LLM to extract ECG findings structured for MI criteria."""
+        instructions = (
+            "Read the clinical text and extract ECG-related findings relevant to myocardial infarction. "
+            "Return JSON with key 'ecg_findings' (array of objects) where each object has: "
+            "{finding: string, context: string, leads: array of strings, measurements: object, is_new: boolean}. "
+            "Leads should be like I, II, III, aVR, aVL, aVF, V1..V9. "
+            "Measurements may include: st_elevation_mm, st_elevation_mv, q_wave_duration_ms."
+        )
+        findings: List[Dict[str, Any]] = []
+        for _, note in notes.iterrows():
+            text = str(note.get('text', ''))
+            if not text.strip():
+                continue
+            data = self.llm_client.extract_json(instructions, text)
+            for f in data.get('ecg_findings', []) or []:
+                findings.append({
+                    'finding': f.get('finding'),
+                    'description': f.get('finding'),
+                    'context': (f.get('context') or '')[:600],
+                    'leads': f.get('leads') or [],
+                    'measurements': f.get('measurements') or {},
+                    'is_new': bool(f.get('is_new')),
+                    'note_type': note.get('note_type', 'Unknown'),
+                    'timestamp': note.get('charttime', ''),
+                    'note_id': note.get('note_id'),
+                    'mi_related': True,
+                    'criteria': ''
+                })
+        return findings
+        
         # Get all notes for the patient
         notes = self.notes_loader.get_patient_notes(patient_id)
         if notes.empty:
             evidence['ecg_findings'] = []
             return evidence
         
-        # Extract ECG findings
-        ecg_findings = self._extract_ecg_findings(notes)
+        # Extract ECG findings (LLM first if available)
+        if getattr(self, 'llm_client', None) and isinstance(self.llm_client, LightenLLMClient) and self.llm_client.enabled:
+            try:
+                ecg_findings = self._extract_with_llm(notes)
+                evidence['metadata']['extraction_mode'] = 'llm'
+            except Exception:
+                ecg_findings = self._extract_ecg_findings(notes)
+                evidence['metadata']['extraction_mode'] = 'regex_fallback'
+        else:
+            ecg_findings = self._extract_ecg_findings(notes)
+            evidence['metadata']['extraction_mode'] = 'regex'
         
         # Determine if findings meet MI criteria
         mi_criteria_met, criteria_details = self._check_mi_criteria(ecg_findings)
