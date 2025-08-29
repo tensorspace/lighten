@@ -2,7 +2,7 @@
 import os
 import json
 from datetime import datetime
-from typing import Dict, List, Any, Optional, Union, Tuple
+from typing import Dict, List, Any, Optional, Tuple
 import pandas as pd
 import logging
 
