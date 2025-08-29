@@ -18,6 +18,7 @@ DEFAULT_MODEL = os.environ.get("LLM_MODEL", "meta-llama/Meta-Llama-3.1-70B-Instr
 DEFAULT_TIMEOUT = 60
 DEFAULT_RATE_LIMIT_TPS = 5
 DEFAULT_CACHE_SIZE = 1024
+DEFAULT_CACHE_PATH = os.environ.get("LLM_CACHE_PATH", "llm_cache.json")
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,7 @@ class LightenLLMClient:
         timeout: int = DEFAULT_TIMEOUT,
         rate_limit_tps: int = DEFAULT_RATE_LIMIT_TPS,
         cache_size: int = DEFAULT_CACHE_SIZE,
+        cache_path: Optional[str] = None,
     ) -> None:
         self.api_key = api_key or os.environ.get("TOGETHER_API_KEY") or os.environ.get("LLM_API_KEY")
         self.model = model or DEFAULT_MODEL
@@ -65,7 +67,9 @@ class LightenLLMClient:
         self.rate_limiter = TokenBucket(rate_limit_tps, rate_limit_tps)
         self.cache: Dict[str, Any] = {}
         self.cache_size = cache_size
+        self.cache_path = cache_path or DEFAULT_CACHE_PATH
         self.retries = 5  # Increased from 2 to 5
+        self._load_cache()
 
     @property
     def enabled(self) -> bool:
@@ -80,6 +84,27 @@ class LightenLLMClient:
     def _get_cache_key(self, instructions: str, text: str) -> str:
         """Generate a cache key from instructions and text."""
         return hashlib.sha256((instructions + text).encode()).hexdigest()
+
+    def _load_cache(self):
+        """Load the cache from a JSON file if it exists."""
+        if self.cache_path and os.path.exists(self.cache_path):
+            try:
+                with open(self.cache_path, 'r') as f:
+                    self.cache = json.load(f)
+                logger.info(f"LLM cache loaded successfully from {self.cache_path}. Contains {len(self.cache)} items.")
+            except (json.JSONDecodeError, FileNotFoundError) as e:
+                logger.warning(f"Could not load LLM cache from {self.cache_path}: {e}. Starting with an empty cache.")
+                self.cache = {}
+
+    def _save_cache(self):
+        """Save the current cache to a JSON file."""
+        if self.cache_path:
+            try:
+                with open(self.cache_path, 'w') as f:
+                    json.dump(self.cache, f, indent=2)
+                logger.debug(f"LLM cache saved to {self.cache_path}.")
+            except IOError as e:
+                logger.error(f"Could not save LLM cache to {self.cache_path}: {e}")
 
     def chat(
         self,
@@ -131,6 +156,7 @@ class LightenLLMClient:
                 if len(self.cache) >= self.cache_size:
                     self.cache.pop(next(iter(self.cache))) # Remove oldest item
                 self.cache[cache_key] = result
+                self._save_cache() # Save cache after each new entry
 
                 return result
             except requests.exceptions.RequestException as e:

@@ -60,15 +60,19 @@ class ClinicalPipeline:
         # Initialize optional LLM client
         llm_cfg = (self.config or {}).get('llm', {})
         api_key = llm_cfg.get('api_key') or os.environ.get('TOGETHER_API_KEY') or os.environ.get('LLM_API_KEY')
-        model = llm_cfg.get('model') or os.environ.get('LLM_MODEL')
-        base_url = llm_cfg.get('base_url') or os.environ.get('LLM_BASE_URL')
-        self.llm_client = LightenLLMClient(
-            api_key=api_key, 
-            model=model, 
-            base_url=base_url,
-            rate_limit_tps=llm_cfg.get('rate_limit_tps', 5),
-            cache_size=llm_cfg.get('cache_size', 1024)
-        ) if (api_key or os.environ.get('TOGETHER_API_KEY') or os.environ.get('LLM_API_KEY')) else None
+        
+        self.llm_client = None
+        if api_key:
+            cache_path = os.path.join(self.output_dir, 'llm_cache.json')
+            self.llm_client = LightenLLMClient(
+                api_key=api_key,
+                model=llm_cfg.get('model', 'meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo'),
+                base_url=llm_cfg.get('base_url', 'https://api.together.xyz/v1/chat/completions'),
+                cache_path=cache_path
+            )
+            logger.info("LLM Client initialized with API key.")
+        else:
+            logger.warning("LLM API key not found. LLM-based evidence extraction will be skipped.")
 
         # Initialize evidence collectors
         collectors_cfg = self.config.get('evidence_collectors', {})
