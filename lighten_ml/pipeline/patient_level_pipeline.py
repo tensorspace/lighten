@@ -318,18 +318,16 @@ class PatientLevelClinicalPipeline:
                 new_tests = troponin_count_after - troponin_count_before
 
                 logger.info(
-                    f"[{patient_id}] ✅ Visit {hadm_id}: Added {new_tests} troponin tests (total: {troponin_count_after})"
+                    f"[{patient_id}] Visit {hadm_id}: Added {new_tests} troponin tests (total: {troponin_count_after})"
                 )
 
                 # Log troponin values for this visit
                 for test in visit_troponin["troponin_tests"]:
                     logger.debug(
-                        f"[DEBUG] {patient_id} - Troponin: {test.get('value', 'N/A')} {test.get('unit', '')} at {test.get('charttime', 'N/A')} (threshold: {'✅' if test.get('above_threshold') else '❌'})"
+                        f"[DEBUG] {patient_id} - Troponin: {test.get('value', 'N/A')} {test.get('unit', '')} at {test.get('charttime', 'N/A')} (threshold: {'PASS' if test.get('above_threshold') else 'FAIL'})"
                     )
             else:
-                logger.info(
-                    f"[{patient_id}] ➖ Visit {hadm_id}: No troponin tests found"
-                )
+                logger.info(f"[{patient_id}] Visit {hadm_id}: No troponin tests found")
 
             # Collect clinical evidence for this visit
             logger.debug(
@@ -348,7 +346,7 @@ class PatientLevelClinicalPipeline:
                 new_symptoms = symptoms_count_after - symptoms_count_before
 
                 logger.info(
-                    f"[{patient_id}] ✅ Visit {hadm_id}: Added {new_symptoms} symptoms (total: {symptoms_count_after})"
+                    f"[{patient_id}] Visit {hadm_id}: Added {new_symptoms} symptoms (total: {symptoms_count_after})"
                 )
 
                 # Log specific symptoms found
@@ -357,7 +355,7 @@ class PatientLevelClinicalPipeline:
                         f"[DEBUG] {patient_id} - Symptom: {symptom.get('symptom', 'N/A')} (confidence: {symptom.get('confidence', 'N/A')})"
                     )
             else:
-                logger.info(f"[{patient_id}] ➖ Visit {hadm_id}: No symptoms found")
+                logger.info(f"[{patient_id}] Visit {hadm_id}: No symptoms found")
 
             if visit_clinical["diagnoses"]:
                 diagnoses_count_before = len(
@@ -372,7 +370,7 @@ class PatientLevelClinicalPipeline:
                 new_diagnoses = diagnoses_count_after - diagnoses_count_before
 
                 logger.info(
-                    f"[{patient_id}] ✅ Visit {hadm_id}: Added {new_diagnoses} diagnoses (total: {diagnoses_count_after})"
+                    f"[{patient_id}] Visit {hadm_id}: Added {new_diagnoses} diagnoses (total: {diagnoses_count_after})"
                 )
 
                 # Log specific diagnoses found
@@ -381,10 +379,10 @@ class PatientLevelClinicalPipeline:
                         f"[DEBUG] {patient_id} - Diagnosis: {diagnosis.get('diagnosis', 'N/A')} (confidence: {diagnosis.get('confidence', 'N/A')})"
                     )
             else:
-                logger.info(f"[{patient_id}] ➖ Visit {hadm_id}: No diagnoses found")
+                logger.info(f"[{patient_id}] Visit {hadm_id}: No diagnoses found")
 
             # Log visit processing completion
-            logger.info(f"[{patient_id}] ✅ Visit {visit_idx} processing completed")
+            logger.info(f"[{patient_id}] Visit {visit_idx} processing completed")
 
             # Collect other evidence types (ECG, imaging, angiography)
             # Note: These would be expanded based on available data sources
@@ -445,7 +443,7 @@ class PatientLevelClinicalPipeline:
                 f"[{patient_id}]   Timeline span: {timeline_span} days across {len(visit_dates)} visits"
             )
 
-        logger.info(f"[{patient_id}] 🎯 READY FOR MI CRITERIA EVALUATION")
+        logger.info(f"[{patient_id}] READY FOR MI CRITERIA EVALUATION")
 
         return historical_evidence
 

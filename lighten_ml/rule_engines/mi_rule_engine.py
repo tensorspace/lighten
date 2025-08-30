@@ -184,21 +184,21 @@ class MIRuleEngine(BaseRuleEngine[MIRuleEngineConfig]):
         )
 
         logger.info("[FINAL_DECISION] === FINAL MI RULE ENGINE DECISION ===")
-        logger.info("[FINAL_DECISION] 🎯 Cross-admission evidence evaluation complete")
+        logger.info("[FINAL_DECISION] Cross-admission evidence evaluation complete")
         logger.info(
-            f"[FINAL_DECISION] 📊 Criteria A (Troponin): {'✅ MET' if criteria_met['A'] else '❌ NOT MET'}"
+            f"[FINAL_DECISION] Criteria A (Troponin): {'MET' if criteria_met['A'] else 'NOT MET'}"
         )
         logger.info(
-            f"[FINAL_DECISION] 🩺 Criteria B (Clinical): {'✅ MET' if criteria_met['B'] else '❌ NOT MET'}"
+            f"[FINAL_DECISION] Criteria B (Clinical): {'MET' if criteria_met['B'] else 'NOT MET'}"
         )
         logger.info(
-            f"[FINAL_DECISION] 🔍 Single troponin case: {'Yes' if is_single_troponin_case else 'No'}"
+            f"[FINAL_DECISION] Single troponin case: {'Yes' if is_single_troponin_case else 'No'}"
         )
         logger.info(
-            f"[FINAL_DECISION] 📋 Guideline requirement: {'Both A AND B required' if self.config.require_both_criteria else 'Alternative logic'}"
+            f"[FINAL_DECISION] Guideline requirement: {'Both A AND B required' if self.config.require_both_criteria else 'Alternative logic'}"
         )
         logger.info(
-            f"[FINAL_DECISION] 🏥 Evidence source: Cross-admission patient timeline analysis"
+            f"[FINAL_DECISION] Evidence source: Cross-admission patient timeline analysis"
         )
 
         if is_single_troponin_case:
@@ -207,25 +207,25 @@ class MIRuleEngine(BaseRuleEngine[MIRuleEngineConfig]):
                 "MI criteria met (single elevated troponin with ischemia)"
             )
             logger.info(
-                f"[SINGLE_TROPONIN] 🎯 Single elevated troponin case - ischemia evidence required"
+                f"[SINGLE_TROPONIN] Single elevated troponin case - ischemia evidence required"
             )
             logger.info(
-                f"[SINGLE_TROPONIN] 📋 4th Universal Definition compliance: Single troponin + clinical evidence"
+                f"[SINGLE_TROPONIN] 4th Universal Definition compliance: Single troponin + clinical evidence"
             )
             logger.info(
-                f"[SINGLE_TROPONIN] 🔬 Final evaluation: A={criteria_met['A']}, B={criteria_met['B']}, Result={'✅ POSITIVE' if passed else '❌ NEGATIVE'}"
+                f"[SINGLE_TROPONIN] Final evaluation: A={criteria_met['A']}, B={criteria_met['B']}, Result={'POSITIVE' if passed else 'NEGATIVE'}"
             )
         elif self.config.require_both_criteria:
             passed = criteria_met["A"] and criteria_met["B"]
             details["summary"] = "MI criteria met (biomarker and ischemia evidence)"
             logger.info(
-                f"[STANDARD_CASE] 📈 Standard MI criteria: troponin rise/fall pattern detected"
+                f"[STANDARD_CASE] Standard MI criteria: troponin rise/fall pattern detected"
             )
             logger.info(
-                f"[STANDARD_CASE] 🎯 4th Universal Definition compliance: Dynamic troponin changes"
+                f"[STANDARD_CASE] 4th Universal Definition compliance: Dynamic troponin changes"
             )
             logger.info(
-                f"[STANDARD_CASE] 🔬 Final evaluation: A={criteria_met['A']}, B={criteria_met['B']}, Result={'✅ POSITIVE' if passed else '❌ NEGATIVE'}"
+                f"[STANDARD_CASE] Final evaluation: A={criteria_met['A']}, B={criteria_met['B']}, Result={'POSITIVE' if passed else 'NEGATIVE'}"
             )
         else:
             passed = criteria_met["A"] or criteria_met["B"]
@@ -235,18 +235,18 @@ class MIRuleEngine(BaseRuleEngine[MIRuleEngineConfig]):
             )
 
         logger.info(
-            f"[FINAL_DECISION] *** 🚨 OVERALL MI DIAGNOSIS: {'✅ POSITIVE' if passed else '❌ NEGATIVE'} ***"
+            f"[FINAL_DECISION] *** OVERALL MI DIAGNOSIS: {'POSITIVE' if passed else 'NEGATIVE'} ***"
         )
         logger.info(
-            f"[FINAL_DECISION] 📊 Cross-admission analysis {'SUPPORTS' if passed else 'DOES NOT SUPPORT'} MI diagnosis"
+            f"[FINAL_DECISION] Cross-admission analysis {'SUPPORTS' if passed else 'DOES NOT SUPPORT'} MI diagnosis"
         )
         if passed:
             logger.info(
-                f"[FINAL_DECISION] 🎉 MI criteria satisfied using patient-level evidence aggregation"
+                f"[FINAL_DECISION] MI criteria satisfied using patient-level evidence aggregation"
             )
         else:
             logger.info(
-                f"[FINAL_DECISION] ⚠️ MI criteria not met despite comprehensive cross-admission analysis"
+                f"[FINAL_DECISION] WARNING: MI criteria not met despite comprehensive cross-admission analysis"
             )
 
         # Add summary to details

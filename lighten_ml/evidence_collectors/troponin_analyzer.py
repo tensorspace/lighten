@@ -63,7 +63,7 @@ class TroponinAnalyzer(BaseEvidenceCollector):
         )
         troponin_tests = self.lab_data_loader.get_troponin_tests(patient_id, hadm_id)
         logger.info(
-            f"[PATIENT_{patient_id}] 📊 Found {len(troponin_tests)} troponin test records for admission {hadm_id or 'UNKNOWN'}"
+            f"[PATIENT_{patient_id}] Found {len(troponin_tests)} troponin test records for admission {hadm_id or 'UNKNOWN'}"
         )
 
         if not troponin_tests.empty:
@@ -75,7 +75,7 @@ class TroponinAnalyzer(BaseEvidenceCollector):
             )
             if test_dates is not None and len(test_dates) > 0:
                 logger.info(
-                    f"[PATIENT_{patient_id}] 📅 Tests span {len(test_dates)} days: {test_dates.index[0]} to {test_dates.index[-1]}"
+                    f"[PATIENT_{patient_id}] Tests span {len(test_dates)} days: {test_dates.index[0]} to {test_dates.index[-1]}"
                 )
                 logger.debug(
                     f"[DEBUG] Patient {patient_id} - Daily test distribution: {dict(test_dates)}"
@@ -139,14 +139,12 @@ class TroponinAnalyzer(BaseEvidenceCollector):
         logger.info(
             f"[PATIENT_{patient_id}] === PATIENT-LEVEL TROPONIN ANALYSIS START ==="
         )
-        logger.info(
-            f"[PATIENT_{patient_id}] 🔍 Cross-admission troponin pattern analysis"
-        )
+        logger.info(f"[PATIENT_{patient_id}] Cross-admission troponin pattern analysis")
         logger.debug(
             f"[DEBUG] Patient {patient_id} - Collecting complete troponin history across all admissions"
         )
         logger.info(
-            f"[PATIENT_{patient_id}] 🎯 Analyzing temporal patterns for MI diagnosis"
+            f"[PATIENT_{patient_id}] Analyzing temporal patterns for MI diagnosis"
         )
 
         evidence = self._get_evidence_base()
@@ -160,7 +158,7 @@ class TroponinAnalyzer(BaseEvidenceCollector):
                 patient_id
             )
             logger.info(
-                f"[PATIENT_{patient_id}] 📊 Found {len(troponin_history)} total troponin tests across ALL admissions"
+                f"[PATIENT_{patient_id}] Found {len(troponin_history)} total troponin tests across ALL admissions"
             )
 
             if not troponin_history.empty:
@@ -182,10 +180,10 @@ class TroponinAnalyzer(BaseEvidenceCollector):
                     )
 
                 logger.info(
-                    f"[PATIENT_{patient_id}] 🏥 Tests across {unique_admissions} admissions"
+                    f"[PATIENT_{patient_id}] Tests across {unique_admissions} admissions"
                 )
                 if date_range:
-                    logger.info(f"[PATIENT_{patient_id}] 📅 Timeline: {date_range}")
+                    logger.info(f"[PATIENT_{patient_id}] Timeline: {date_range}")
 
                 # Log value distribution
                 if "valuenum" in troponin_history.columns:
@@ -195,10 +193,10 @@ class TroponinAnalyzer(BaseEvidenceCollector):
                         min_value = values.min()
                         above_threshold = (values > self.troponin_threshold).sum()
                         logger.info(
-                            f"[PATIENT_{patient_id}] 📈 Value range: {min_value:.3f} - {max_value:.3f} ng/mL"
+                            f"[PATIENT_{patient_id}] Value range: {min_value:.3f} - {max_value:.3f} ng/mL"
                         )
                         logger.info(
-                            f"[PATIENT_{patient_id}] 🎯 Tests above threshold (>{self.troponin_threshold}): {above_threshold}/{len(values)}"
+                            f"[PATIENT_{patient_id}] Tests above threshold (>{self.troponin_threshold}): {above_threshold}/{len(values)}"
                         )
 
             if troponin_history.empty:
@@ -216,52 +214,52 @@ class TroponinAnalyzer(BaseEvidenceCollector):
 
             # Process patient-level troponin data
             logger.info(
-                f"[PATIENT_{patient_id}] 🔄 Processing cross-admission troponin patterns..."
+                f"[PATIENT_{patient_id}] Processing cross-admission troponin patterns..."
             )
             processed = self._process_patient_troponin_history(
                 troponin_history, patient_id
             )
             logger.info(
-                f"[PATIENT_{patient_id}] 📋 Patient-level analysis summary: {processed['summary']}"
+                f"[PATIENT_{patient_id}] Patient-level analysis summary: {processed['summary']}"
             )
 
             # Log detailed processing results
             if "patient_analysis" in processed:
                 analysis = processed["patient_analysis"]
                 logger.info(
-                    f"[PATIENT_{patient_id}] 🏥 Admissions with troponin: {analysis.get('admissions_with_troponin', 0)}"
+                    f"[PATIENT_{patient_id}] Admissions with troponin: {analysis.get('admissions_with_troponin', 0)}"
                 )
                 logger.info(
-                    f"[PATIENT_{patient_id}] 📊 Total test count: {analysis.get('total_tests', 0)}"
+                    f"[PATIENT_{patient_id}] Total test count: {analysis.get('total_tests', 0)}"
                 )
                 if "date_range" in analysis and analysis["date_range"]:
                     logger.info(
-                        f"[PATIENT_{patient_id}] 📅 Analysis period: {analysis['date_range']}"
+                        f"[PATIENT_{patient_id}] Analysis period: {analysis['date_range']}"
                     )
 
             # Check for MI criteria using complete patient history
             logger.info(
-                f"[PATIENT_{patient_id}] 🎯 Evaluating MI criteria using complete patient timeline..."
+                f"[PATIENT_{patient_id}] Evaluating MI criteria using complete patient timeline..."
             )
             criteria_met, criteria_details = self._check_patient_mi_criteria(
                 processed["values"], patient_id
             )
             logger.info(
-                f"[PATIENT_{patient_id}] *** 🚨 PATIENT-LEVEL TROPONIN CRITERIA: {'✅ MET' if criteria_met else '❌ NOT MET'} ***"
+                f"[PATIENT_{patient_id}] *** PATIENT-LEVEL TROPONIN CRITERIA: {'MET' if criteria_met else 'NOT MET'} ***"
             )
 
             # Log detailed criteria evaluation
             if criteria_details:
                 logger.info(
-                    f"[PATIENT_{patient_id}] 📝 Criteria details: {criteria_details.get('criteria_met', 'N/A')}"
+                    f"[PATIENT_{patient_id}] Criteria details: {criteria_details.get('criteria_met', 'N/A')}"
                 )
                 if "rise_fall_pattern" in criteria_details:
                     logger.info(
-                        f"[PATIENT_{patient_id}] 📈 Rise/fall pattern: {'✅ Detected' if criteria_details['rise_fall_pattern'] else '❌ Not detected'}"
+                        f"[PATIENT_{patient_id}] Rise/fall pattern: {'Detected' if criteria_details['rise_fall_pattern'] else 'Not detected'}"
                     )
                 if "above_threshold" in criteria_details:
                     logger.info(
-                        f"[PATIENT_{patient_id}] 🎯 Above threshold: {'✅ Yes' if criteria_details['above_threshold'] else '❌ No'}"
+                        f"[PATIENT_{patient_id}] Above threshold: {'Yes' if criteria_details['above_threshold'] else 'No'}"
                     )
 
             evidence.update(
@@ -289,10 +287,10 @@ class TroponinAnalyzer(BaseEvidenceCollector):
 
         except Exception as e:
             logger.error(
-                f"[PATIENT_{patient_id}] ❌ ERROR in patient-level troponin analysis: {e}"
+                f"[PATIENT_{patient_id}] ERROR in patient-level troponin analysis: {e}"
             )
             logger.error(
-                f"[PATIENT_{patient_id}] 🚨 Cross-admission analysis failed - falling back to error state"
+                f"[PATIENT_{patient_id}] Cross-admission analysis failed - falling back to error state"
             )
             logger.debug(
                 f"[DEBUG] Patient {patient_id} - Exception details", exc_info=True

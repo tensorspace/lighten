@@ -37,10 +37,10 @@ class OnsetDateResolver:
         """
         logger.info("[ONSET_RESOLUTION] === STARTING MI ONSET DATE RESOLUTION ===")
         logger.info(
-            "[ONSET_RESOLUTION] 🕐 Using hierarchical approach across patient timeline"
+            "[ONSET_RESOLUTION] Using hierarchical approach across patient timeline"
         )
         logger.info(
-            "[ONSET_RESOLUTION] 📋 Priority: Symptoms → ECG → Troponin → Diagnosis → Admission"
+            "[ONSET_RESOLUTION] Priority: Symptoms -> ECG -> Troponin -> Diagnosis -> Admission"
         )
 
         # Log evidence inventory
@@ -49,72 +49,70 @@ class OnsetDateResolver:
         ecg_data = evidence.get("ecg", {})
         visit_metadata = evidence.get("visit_metadata", {})
 
-        logger.info("[ONSET_RESOLUTION] 📊 Cross-admission evidence inventory:")
+        logger.info("[ONSET_RESOLUTION] Cross-admission evidence inventory:")
         logger.info(
-            f"[ONSET_RESOLUTION]   🩺 Symptoms: {len(clinical_data.get('symptoms', []))}"
+            f"[ONSET_RESOLUTION]   Symptoms: {len(clinical_data.get('symptoms', []))}"
         )
         logger.info(
-            f"[ONSET_RESOLUTION]   📈 ECG findings: {len(ecg_data.get('ecg_findings', []))}"
+            f"[ONSET_RESOLUTION]   ECG findings: {len(ecg_data.get('ecg_findings', []))}"
         )
         logger.info(
-            f"[ONSET_RESOLUTION]   🧪 Troponin tests: {len(troponin_data.get('troponin_tests', []))}"
+            f"[ONSET_RESOLUTION]   Troponin tests: {len(troponin_data.get('troponin_tests', []))}"
         )
         logger.info(
-            f"[ONSET_RESOLUTION]   📋 Diagnoses: {len(clinical_data.get('diagnoses', []))}"
+            f"[ONSET_RESOLUTION]   Diagnoses: {len(clinical_data.get('diagnoses', []))}"
         )
         logger.info(
-            f"[ONSET_RESOLUTION]   🏥 Total visits: {visit_metadata.get('total_visits', 0)}"
+            f"[ONSET_RESOLUTION]   Total visits: {visit_metadata.get('total_visits', 0)}"
         )
 
         if admission_time:
             logger.info(
-                f"[ONSET_RESOLUTION]   🕐 Admission time available: {admission_time}"
+                f"[ONSET_RESOLUTION]   Admission time available: {admission_time}"
             )
         # 1. Symptom Onset Date (from clinical notes)
         logger.info(
-            "[ONSET_RESOLUTION] 🔍 STEP 1: Searching for earliest symptom onset..."
+            "[ONSET_RESOLUTION] STEP 1: Searching for earliest symptom onset..."
         )
         symptom_onset = self._find_earliest_symptom_date(
             evidence.get("clinical", {}).get("symptoms", [])
         )
         if symptom_onset:
             logger.info(
-                f"[ONSET_RESOLUTION] ✅ FOUND: Symptom onset date: {symptom_onset}"
+                f"[ONSET_RESOLUTION] FOUND: Symptom onset date: {symptom_onset}"
             )
             logger.info(
-                f"[ONSET_RESOLUTION] 🎯 Using highest priority evidence (symptoms)"
+                f"[ONSET_RESOLUTION] Using highest priority evidence (symptoms)"
             )
             return {
                 "onset_date": symptom_onset.isoformat(),
                 "rationale": "Symptom onset date (highest priority)",
             }
         else:
-            logger.info(f"[ONSET_RESOLUTION] ➖ No symptom onset dates found")
+            logger.info(f"[ONSET_RESOLUTION] No symptom onset dates found")
 
         # 2. First Abnormal ECG Date
-        logger.info(
-            "[ONSET_RESOLUTION] 🔍 STEP 2: Searching for earliest abnormal ECG..."
-        )
+        logger.info("[ONSET_RESOLUTION] STEP 2: Searching for earliest abnormal ECG...")
         ecg_onset = self._find_earliest_ecg_date(
             evidence.get("ecg", {}).get("ecg_findings", [])
         )
         if ecg_onset:
             logger.info(
-                f"[ONSET_RESOLUTION] ✅ FOUND: First abnormal ECG date: {ecg_onset}"
+                f"[ONSET_RESOLUTION] FOUND: First abnormal ECG date: {ecg_onset}"
             )
             logger.info(
-                f"[ONSET_RESOLUTION] 📈 Using second priority evidence (ECG changes)"
+                f"[ONSET_RESOLUTION] Using second priority evidence (ECG changes)"
             )
             return {
                 "onset_date": ecg_onset.isoformat(),
                 "rationale": "First abnormal ECG date (second priority)",
             }
         else:
-            logger.info(f"[ONSET_RESOLUTION] ➖ No abnormal ECG dates found")
+            logger.info(f"[ONSET_RESOLUTION] No abnormal ECG dates found")
 
         # 3. First Elevated Troponin Date
         logger.info(
-            "[ONSET_RESOLUTION] 🔍 STEP 3: Searching for first elevated troponin..."
+            "[ONSET_RESOLUTION] STEP 3: Searching for first elevated troponin..."
         )
         troponin_tests = evidence.get("troponin", {}).get("troponin_tests", [])
         logger.debug(
@@ -123,21 +121,21 @@ class OnsetDateResolver:
         troponin_onset = self._find_first_elevated_troponin_date(troponin_tests)
         if troponin_onset:
             logger.info(
-                f"[ONSET_RESOLUTION] ✅ FOUND: First elevated troponin date: {troponin_onset}"
+                f"[ONSET_RESOLUTION] FOUND: First elevated troponin date: {troponin_onset}"
             )
             logger.info(
-                f"[ONSET_RESOLUTION] 🧪 Using third priority evidence (troponin elevation)"
+                f"[ONSET_RESOLUTION] Using third priority evidence (troponin elevation)"
             )
             return {
                 "onset_date": troponin_onset.isoformat(),
                 "rationale": "First elevated troponin date (third priority)",
             }
         else:
-            logger.info(f"[ONSET_RESOLUTION] ➖ No elevated troponin dates found")
+            logger.info(f"[ONSET_RESOLUTION] No elevated troponin dates found")
 
         # 4. Clinical Recognition/Diagnosis Date
         logger.info(
-            "[ONSET_RESOLUTION] 🔍 STEP 4: Searching for earliest diagnosis date..."
+            "[ONSET_RESOLUTION] STEP 4: Searching for earliest diagnosis date..."
         )
         diagnoses = evidence.get("clinical", {}).get("diagnoses", [])
         logger.debug(
@@ -146,39 +144,39 @@ class OnsetDateResolver:
         diagnosis_date = self._find_earliest_diagnosis_date(diagnoses)
         if diagnosis_date:
             logger.info(
-                f"[ONSET_RESOLUTION] ✅ FOUND: Clinical diagnosis date: {diagnosis_date}"
+                f"[ONSET_RESOLUTION] FOUND: Clinical diagnosis date: {diagnosis_date}"
             )
             logger.info(
-                f"[ONSET_RESOLUTION] 📋 Using fourth priority evidence (clinical diagnosis)"
+                f"[ONSET_RESOLUTION] Using fourth priority evidence (clinical diagnosis)"
             )
             return {
                 "onset_date": diagnosis_date.isoformat(),
                 "rationale": "Clinical diagnosis date (fourth priority)",
             }
         else:
-            logger.info(f"[ONSET_RESOLUTION] ➖ No diagnosis dates found")
+            logger.info(f"[ONSET_RESOLUTION] No diagnosis dates found")
 
         # 5. Hospital Presentation/Admission Date
-        logger.info("[ONSET_RESOLUTION] 🔍 STEP 5: Checking hospital admission date...")
+        logger.info("[ONSET_RESOLUTION] STEP 5: Checking hospital admission date...")
         if admission_time:
             logger.info(
-                f"[ONSET_RESOLUTION] ✅ FALLBACK: Using admission date: {admission_time}"
+                f"[ONSET_RESOLUTION] FALLBACK: Using admission date: {admission_time}"
             )
             logger.info(
-                f"[ONSET_RESOLUTION] 🏥 Using lowest priority evidence (admission date)"
+                f"[ONSET_RESOLUTION] Using lowest priority evidence (admission date)"
             )
             return {
                 "onset_date": admission_time.isoformat(),
                 "rationale": "Hospital admission date (fallback)",
             }
         else:
-            logger.info(f"[ONSET_RESOLUTION] ➖ No admission time available")
+            logger.info(f"[ONSET_RESOLUTION] No admission time available")
 
         logger.warning(
-            "[ONSET_RESOLUTION] ❌ RESOLUTION FAILED: No onset date could be determined"
+            "[ONSET_RESOLUTION] RESOLUTION FAILED: No onset date could be determined"
         )
         logger.warning(
-            "[ONSET_RESOLUTION] 🚨 Exhausted all evidence sources across patient timeline"
+            "[ONSET_RESOLUTION] WARNING: Exhausted all evidence sources across patient timeline"
         )
         return {
             "onset_date": None,
