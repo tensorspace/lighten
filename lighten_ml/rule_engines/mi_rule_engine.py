@@ -129,11 +129,6 @@ class MIRuleEngine(BaseRuleEngine[MIRuleEngineConfig]):
 
         # Evaluate Criteria A: Biomarker evidence
         logger.info("[CRITERIA_A] Starting biomarker evidence evaluation...")
-        logger.debug(f"[DEBUG] Troponin threshold: {self.config.troponin_threshold}")
-        logger.debug(
-            f"[DEBUG] Single value threshold: {self.config.single_value_threshold}"
-        )
-
         a_result = self._evaluate_criteria_a(evidence.get("troponin", {}))
         criteria_met["A"] = a_result["met"]
         details["criteria_A"] = a_result["details"]
@@ -143,24 +138,14 @@ class MIRuleEngine(BaseRuleEngine[MIRuleEngineConfig]):
         logger.debug(f"[DEBUG] Criteria A details: {a_result['details']}")
 
         # Early termination optimization: Skip Criteria B if A is not met
-        # Clinical guideline requires BOTH A AND B, so no point evaluating B if A fails
         if not criteria_met["A"]:
             logger.info(
                 "[EARLY_TERMINATION] Criteria A not met - skipping Criteria B evaluation"
             )
-            logger.info(
-                "[PERFORMANCE] Computational resources saved by early termination"
-            )
-            logger.info(
-                "[CLINICAL_GUIDELINE] Both A AND B required - early exit when A fails"
-            )
-
             # Set default values for criteria B (not evaluated)
-            criteria_met["B"] = False
             details["criteria_B"] = {
                 "reason": "Not evaluated - Criteria A failed",
                 "early_termination": True,
-                "performance_optimization": "Skipped expensive ischemia analysis",
             }
         else:
             # Evaluate Criteria B: Ischemia evidence (only if A is met)
@@ -177,92 +162,36 @@ class MIRuleEngine(BaseRuleEngine[MIRuleEngineConfig]):
             )
 
         # Determine overall result
-        # Special handling for single elevated troponin: requires ischemia evidence
-        is_single_troponin_case = (
-            details["criteria_A"].get("criteria_met") == "Single elevated troponin"
-            and self.config.require_ischemia_for_single_troponin
-        )
+        passed = criteria_met["A"] and criteria_met["B"]
 
-        logger.info("[FINAL_DECISION] === FINAL MI RULE ENGINE DECISION ===")
         logger.info("[FINAL_DECISION] Cross-admission evidence evaluation complete")
-        logger.info(
-            f"[FINAL_DECISION] Criteria A (Troponin): {'MET' if criteria_met['A'] else 'NOT MET'}"
-        )
-        logger.info(
-            f"[FINAL_DECISION] Criteria B (Clinical): {'MET' if criteria_met['B'] else 'NOT MET'}"
-        )
-        logger.info(
-            f"[FINAL_DECISION] Single troponin case: {'Yes' if is_single_troponin_case else 'No'}"
-        )
-        logger.info(
-            f"[FINAL_DECISION] Guideline requirement: {'Both A AND B required' if self.config.require_both_criteria else 'Alternative logic'}"
-        )
-        logger.info(
-            f"[FINAL_DECISION] Evidence source: Cross-admission patient timeline analysis"
-        )
+        logger.info(f"[FINAL_DECISION] Criteria A (Troponin): {'MET' if criteria_met['A'] else 'NOT MET'}")
+        logger.info(f"[FINAL_DECISION] Criteria B (Clinical): {'MET' if criteria_met['B'] else 'NOT MET'}")
+        logger.info(f"[FINAL_DECISION] *** OVERALL MI DIAGNOSIS: {'POSITIVE' if passed else 'NEGATIVE'} ***")
 
-        if is_single_troponin_case:
-            passed = criteria_met["A"] and criteria_met["B"]
-            details["summary"] = (
-                "MI criteria met (single elevated troponin with ischemia)"
-            )
-            logger.info(
-                f"[SINGLE_TROPONIN] Single elevated troponin case - ischemia evidence required"
-            )
-            logger.info(
-                f"[SINGLE_TROPONIN] 4th Universal Definition compliance: Single troponin + clinical evidence"
-            )
-            logger.info(
-                f"[SINGLE_TROPONIN] Final evaluation: A={criteria_met['A']}, B={criteria_met['B']}, Result={'POSITIVE' if passed else 'NEGATIVE'}"
-            )
-        elif self.config.require_both_criteria:
-            passed = criteria_met["A"] and criteria_met["B"]
-            details["summary"] = "MI criteria met (biomarker and ischemia evidence)"
-            logger.info(
-                f"[STANDARD_CASE] Standard MI criteria: troponin rise/fall pattern detected"
-            )
-            logger.info(
-                f"[STANDARD_CASE] 4th Universal Definition compliance: Dynamic troponin changes"
-            )
-            logger.info(
-                f"[STANDARD_CASE] Final evaluation: A={criteria_met['A']}, B={criteria_met['B']}, Result={'POSITIVE' if passed else 'NEGATIVE'}"
-            )
-        else:
-            passed = criteria_met["A"] or criteria_met["B"]
-            details["summary"] = "MI criteria met (biomarker or ischemia evidence)"
-            logger.info(
-                f"FINAL DEBUG - Either criteria: A={criteria_met['A']}, B={criteria_met['B']}, Result={passed}"
-            )
-
-        logger.info(
-            f"[FINAL_DECISION] *** OVERALL MI DIAGNOSIS: {'POSITIVE' if passed else 'NEGATIVE'} ***"
-        )
-        logger.info(
-            f"[FINAL_DECISION] Cross-admission analysis {'SUPPORTS' if passed else 'DOES NOT SUPPORT'} MI diagnosis"
-        )
-        if passed:
-            logger.info(
-                f"[FINAL_DECISION] MI criteria satisfied using patient-level evidence aggregation"
-            )
-        else:
-            logger.info(
-                f"[FINAL_DECISION] WARNING: MI criteria not met despite comprehensive cross-admission analysis"
-            )
-
-        # Add summary to details
-        details["summary_details"] = {
-            "criteria_met": criteria_met,
-        }
-
-        return self._create_result(
+        return RuleResult(
             passed=passed,
-            confidence=0.0,  # Confidence removed - no longer calculated
-            evidence=evidence_items,
             details=details,
+            evidence_items=evidence_items,
+            engine_name=self.__class__.__name__,
         )
+
+    def evaluate_criteria_a(self, troponin_evidence: Dict[str, Any]) -> Dict[str, Any]:
+        """Public method to evaluate only Criteria A (Troponin Biomarkers).
+
+        Args:
+            troponin_evidence: Dictionary containing troponin data.
+
+        Returns:
+            A dictionary with the evaluation result for Criteria A.
+        """
+        logger.info("[CRITERIA_A_ONLY] Evaluating biomarker evidence...")
+        result = self._evaluate_criteria_a(troponin_evidence)
+        logger.info(f"[CRITERIA_A_ONLY] Result: {'MET' if result['met'] else 'NOT MET'}")
+        return result
 
     def _evaluate_criteria_a(self, troponin_evidence: Dict[str, Any]) -> Dict[str, Any]:
-        """Evaluate Criteria A: Biomarker evidence.
+        """Evaluate Criteria A: Rise and/or fall of troponin.
 
         Args:
             troponin_evidence: Dictionary containing troponin test results
