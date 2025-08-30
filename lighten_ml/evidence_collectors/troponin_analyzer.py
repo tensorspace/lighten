@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Tuple
 from dateutil.parser import parse as date_parse
 
 from .base_evidence_collector import BaseEvidenceCollector
+from .unit_converter import convert_troponin_units, is_above_troponin_threshold, compare_troponin_values
 
 logger = logging.getLogger(__name__)
 
@@ -98,19 +99,51 @@ class TroponinAnalyzer(BaseEvidenceCollector):
 
         for _, test in troponin_tests.iterrows():
             try:
-                value = float(test["value"])
-                timestamp_str = test.get("charttime", None)
-                timestamp = date_parse(timestamp_str) if timestamp_str else None
+                # Try both 'valuenum' and 'value' column names for compatibility
+                value = None
+                if "valuenum" in test and test["valuenum"] is not None:
+                    value = float(test["valuenum"])
+                elif "value" in test and test["value"] is not None:
+                    value = float(test["value"])
+                else:
+                    logger.warning(f"No numeric value found in test record: {test.to_dict()}")
+                    continue
+                
+                # Get units information
+                unit = test.get("valueuom", "")
+                
+                # Use charttime as primary time reference (clinical time when measurement was taken)
+                # Fall back to storetime if charttime is not available
+                timestamp = None
+                if "charttime" in test and test["charttime"] is not None:
+                    timestamp = test["charttime"] if hasattr(test["charttime"], 'year') else date_parse(str(test["charttime"]))
+                elif "storetime" in test and test["storetime"] is not None:
+                    timestamp = test["storetime"] if hasattr(test["storetime"], 'year') else date_parse(str(test["storetime"]))
+                    logger.warning(f"Using storetime as fallback for troponin test (charttime not available)")
+                else:
+                    logger.warning(f"No valid timestamp found in test record")
+                
+                # Convert units if necessary (troponin threshold is in ng/mL)
+                converted_value, final_unit = convert_troponin_units(value, unit)
+                if converted_value != value:
+                    logger.info(f"Converted troponin: {value} {unit} -> {converted_value} {final_unit}")
 
-                # Track maximum value
-                if value > max_value:
-                    max_value = value
+                # Track maximum value (use converted value for comparison)
+                if converted_value > max_value:
+                    max_value = converted_value
 
+                # Use unit-aware threshold comparison
+                threshold_result = is_above_troponin_threshold(value, unit, self.TROPONIN_THRESHOLD)
+                
                 processed.append(
                     {
-                        "value": value,
+                        "value": converted_value,  # Use converted value
+                        "original_value": value,   # Keep original for reference
+                        "unit": final_unit,        # Final unit after conversion
+                        "original_unit": unit,     # Original unit for reference
                         "timestamp": timestamp,
-                        "above_threshold": value > self.TROPONIN_THRESHOLD,
+                        "above_threshold": threshold_result["above_threshold"],
+                        "threshold_analysis": threshold_result,  # Full unit-aware analysis
                         "test_id": test.get("itemid"),
                         "test_name": test.get("label", "Troponin T"),
                     }

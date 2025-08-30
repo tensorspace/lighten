@@ -177,20 +177,54 @@ class LabDataLoader(BaseDataLoader):
         else:
             logger.warning("❌ No lab data loaded - dataset is empty")
 
-        # Convert charttime to datetime
-        if "charttime" in self.data.columns:
-            logger.info("Step 4: Converting charttime to datetime format...")
-            try:
-                self.data["charttime"] = pd.to_datetime(self.data["charttime"])
-                logger.info("✅ Charttime conversion successful")
-
-                # Log time range
-                if not self.data.empty:
-                    min_time = self.data["charttime"].min()
-                    max_time = self.data["charttime"].max()
-                    logger.info(f"Time range: {min_time} to {max_time}")
-            except Exception as e:
-                logger.error(f"❌ Error converting charttime: {e}")
+        # Convert time columns to datetime (both charttime and storetime)
+        logger.info("Step 4: Converting time columns to datetime format...")
+        time_columns = ["charttime", "storetime"]
+        
+        for time_col in time_columns:
+            if time_col in self.data.columns:
+                logger.info(f"Converting {time_col} to datetime...")
+                try:
+                    self.data[time_col] = pd.to_datetime(self.data[time_col])
+                    logger.info(f"✅ {time_col} conversion successful")
+                    
+                    # Log time range for this column
+                    if not self.data.empty:
+                        min_time = self.data[time_col].min()
+                        max_time = self.data[time_col].max()
+                        logger.info(f"{time_col} range: {min_time} to {max_time}")
+                except Exception as e:
+                    logger.error(f"❌ Error converting {time_col}: {e}")
+            else:
+                logger.warning(f"⚠️ {time_col} column not found in data")
+        
+        # Log information about units column
+        if "valueuom" in self.data.columns:
+            unique_units = self.data["valueuom"].nunique()
+            logger.info(f"✅ Units column (valueuom) found: {unique_units} unique units")
+            
+            # Log most common units for debugging
+            if not self.data.empty:
+                top_units = self.data["valueuom"].value_counts().head(10)
+                logger.info(f"Top 10 most common units: {dict(top_units)}")
+        else:
+            logger.warning("⚠️ Units column (valueuom) not found in data")
+            
+        # Log critical columns for time series analysis
+        critical_columns = ["charttime", "storetime", "valuenum", "valueuom"]
+        available_columns = [col for col in critical_columns if col in self.data.columns]
+        missing_columns = [col for col in critical_columns if col not in self.data.columns]
+        
+        logger.info(f"✅ Critical columns available: {available_columns}")
+        if missing_columns:
+            logger.warning(f"⚠️ Critical columns missing: {missing_columns}")
+            
+        # Explain the difference between charttime and storetime
+        if "charttime" in self.data.columns and "storetime" in self.data.columns:
+            logger.info("📋 Time column usage:")
+            logger.info("  - charttime: When the measurement was taken (clinical time)")
+            logger.info("  - storetime: When the result was stored in the system")
+            logger.info("  - For time series analysis, charttime should be used as primary temporal reference")
 
         logger.info("✅ Lab data loading process completed successfully.")
 
@@ -303,15 +337,19 @@ class LabDataLoader(BaseDataLoader):
                         if pd.isna(test.get("category")) or test.get("category") == "":
                             tests.at[idx, "category"] = mapping["category"]
 
-            # Log details about found tests
+            # Log details about found tests with units and time information
             for _, test in tests.iterrows():
                 itemid = test.get("itemid", "N/A")
                 label = test.get("label", "N/A")
                 fluid = test.get("fluid", "N/A")
                 value = test.get("valuenum", "N/A")
+                unit = test.get("valueuom", "N/A")
+                charttime = test.get("charttime", "N/A")
+                storetime = test.get("storetime", "N/A")
                 logger.info(
                     f"[{hadm_id}] Test found: itemid={itemid}, "
-                    f"label='{label}', fluid='{fluid}', value={value}"
+                    f"label='{label}', fluid='{fluid}', value={value} {unit}, "
+                    f"charttime={charttime}, storetime={storetime}"
                 )
 
             values = tests["valuenum"].dropna()
