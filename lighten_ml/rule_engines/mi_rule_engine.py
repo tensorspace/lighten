@@ -101,15 +101,23 @@ class MIRuleEngine(BaseRuleEngine[MIRuleEngineConfig]):
         """
         logger.info("[MI_EVALUATION] Starting MI diagnosis evaluation")
         logger.debug(f"[DEBUG] Evidence categories available: {list(evidence.keys())}")
-        
+
         # Log evidence summary for debugging
         troponin_data = evidence.get("troponin", {})
         clinical_data = evidence.get("clinical", {})
-        logger.debug(f"[DEBUG] Troponin available: {troponin_data.get('troponin_available', False)}")
-        logger.debug(f"[DEBUG] Troponin tests count: {len(troponin_data.get('troponin_tests', []))}")
-        logger.debug(f"[DEBUG] Clinical symptoms count: {len(clinical_data.get('symptoms', []))}")
-        logger.debug(f"[DEBUG] Clinical diagnoses count: {len(clinical_data.get('diagnoses', []))}")
-        
+        logger.debug(
+            f"[DEBUG] Troponin available: {troponin_data.get('troponin_available', False)}"
+        )
+        logger.debug(
+            f"[DEBUG] Troponin tests count: {len(troponin_data.get('troponin_tests', []))}"
+        )
+        logger.debug(
+            f"[DEBUG] Clinical symptoms count: {len(clinical_data.get('symptoms', []))}"
+        )
+        logger.debug(
+            f"[DEBUG] Clinical diagnoses count: {len(clinical_data.get('diagnoses', []))}"
+        )
+
         # Initialize result components
         criteria_met = {
             "A": False,  # Biomarker criteria
@@ -122,8 +130,10 @@ class MIRuleEngine(BaseRuleEngine[MIRuleEngineConfig]):
         # Evaluate Criteria A: Biomarker evidence
         logger.info("[CRITERIA_A] Starting biomarker evidence evaluation...")
         logger.debug(f"[DEBUG] Troponin threshold: {self.config.troponin_threshold}")
-        logger.debug(f"[DEBUG] Single value threshold: {self.config.single_value_threshold}")
-        
+        logger.debug(
+            f"[DEBUG] Single value threshold: {self.config.single_value_threshold}"
+        )
+
         a_result = self._evaluate_criteria_a(evidence.get("troponin", {}))
         criteria_met["A"] = a_result["met"]
         details["criteria_A"] = a_result["details"]
