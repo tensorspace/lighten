@@ -7,7 +7,6 @@ from typing import Any, Dict, List, Tuple
 import pandas as pd
 from dateutil.parser import parse as date_parse
 
-from .base_evidence_collector import BaseEvidenceCollector
 from .unit_converter import (
     convert_troponin_units,
     is_above_troponin_threshold,
@@ -18,8 +17,8 @@ from ..llm_client import LightenLLMClient
 logger = logging.getLogger(__name__)
 
 
-class TroponinAnalyzer(BaseEvidenceCollector):
-    """Analyzes troponin levels to detect myocardial infarction patterns."""
+class TroponinAnalyzer:
+    """Analyzes troponin data to determine if it meets MI criteria."""
 
     # Diagnostic threshold for Troponin T in ng/mL, 5x for high-value exception
     TROPONIN_THRESHOLD = 0.014
