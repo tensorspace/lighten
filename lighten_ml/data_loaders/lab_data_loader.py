@@ -149,7 +149,9 @@ class LabDataLoader(BaseDataLoader):
         self.data = pd.concat(chunks) if chunks else pd.DataFrame()
 
         if not self.data.empty:
-            logger.info(f"[SUCCESS] Lab events concatenated: {len(self.data)} total records")
+            logger.info(
+                f"[SUCCESS] Lab events concatenated: {len(self.data)} total records"
+            )
 
             # Log final dataset statistics
             unique_patients = (
@@ -424,7 +426,9 @@ class LabDataLoader(BaseDataLoader):
 
         # Following clinical guideline: ONLY Troponin T for MI diagnosis
         # Diagnostic threshold: >0.014 ng/mL (per clinical guideline)
-        troponin_itemids = [51003]  # Troponin T ONLY - guideline specifies no Troponin I
+        troponin_itemids = [
+            51003
+        ]  # Troponin T ONLY - guideline specifies no Troponin I
 
         # Use the simplified itemid-based approach
         troponin_tests = self.get_lab_tests_by_itemids(

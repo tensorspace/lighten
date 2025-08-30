@@ -249,13 +249,15 @@ class MIRuleEngine(BaseRuleEngine[MIRuleEngineConfig]):
                 logger.info(f"    [DATA] Original: {original_value} {original_unit}")
                 logger.info(f"    [DATA] Converted: {converted_value} {converted_unit}")
                 logger.info(f"    [DATA] Above threshold: {above_threshold}")
-                
+
                 # Handle NaN fold_change values
-                if isinstance(fold_change, (int, float)) and not (fold_change != fold_change):  # Check for NaN
+                if isinstance(fold_change, (int, float)) and not (
+                    fold_change != fold_change
+                ):  # Check for NaN
                     logger.info(f"    [DATA] Fold change: {fold_change}")
                 else:
                     logger.info(f"    [DATA] Fold change: N/A (invalid calculation)")
-                    
+
                 logger.info(f"    [DATA] Timestamp: {test.get('timestamp', 'N/A')}")
         else:
             logger.warning("CRITERIA A DEBUG - No troponin_tests found in evidence")

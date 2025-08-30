@@ -57,7 +57,9 @@ def convert_troponin_units(value: float, unit: str) -> tuple[float, str]:
                 f"[STATS] UNIT CONVERSION: Conversion factor: {converted_value/value:.6f}"
             )
         else:
-            logger.info(f"[SUCCESS] UNIT CONVERSION: LLM determined no conversion needed")
+            logger.info(
+                f"[SUCCESS] UNIT CONVERSION: LLM determined no conversion needed"
+            )
             logger.info(
                 f"[SUCCESS] UNIT CONVERSION RESULT: {value} {unit_str} -> {converted_value} {final_unit}"
             )
@@ -66,7 +68,9 @@ def convert_troponin_units(value: float, unit: str) -> tuple[float, str]:
         logger.warning(
             f"[ERROR] UNIT CONVERSION: LLM conversion failed for {value} {unit_str}: {e}"
         )
-        logger.info(f"[CONVERT] UNIT CONVERSION: Falling back to hard-coded conversion...")
+        logger.info(
+            f"[CONVERT] UNIT CONVERSION: Falling back to hard-coded conversion..."
+        )
         # Fallback to hard-coded conversion
         result = _fallback_convert_troponin_units(value, unit_str)
         logger.info(
@@ -258,9 +262,11 @@ def is_above_troponin_threshold(
     logger.info(f"  [DATA] Threshold: {threshold} ng/mL")
     logger.info(f"  [DATA] Above threshold: {above_threshold}")
     logger.info(f"  [DATA] Difference: {difference:+.6f} ng/mL")
-    
+
     # Handle NaN fold_change values
-    if isinstance(fold_change, (int, float)) and not (fold_change != fold_change):  # Check for NaN
+    if isinstance(fold_change, (int, float)) and not (
+        fold_change != fold_change
+    ):  # Check for NaN
         logger.info(f"  [DATA] Fold change: {fold_change:.3f}x")
     else:
         logger.info(f"  [DATA] Fold change: N/A (invalid calculation)")
@@ -269,12 +275,22 @@ def is_above_troponin_threshold(
         logger.info(
             f"[PASS] THRESHOLD COMPARISON: VALUE EXCEEDS THRESHOLD ({converted_value:.6f} > {threshold})"
         )
-        if isinstance(fold_change, (int, float)) and not (fold_change != fold_change) and fold_change >= 5.0:
+        if (
+            isinstance(fold_change, (int, float))
+            and not (fold_change != fold_change)
+            and fold_change >= 5.0
+        ):
             logger.info(
                 f"[CRITICAL] THRESHOLD COMPARISON: SIGNIFICANTLY ELEVATED (>=5x threshold)"
             )
-        elif isinstance(fold_change, (int, float)) and not (fold_change != fold_change) and fold_change >= 2.0:
-            logger.info(f"[WARNING] THRESHOLD COMPARISON: MODERATELY ELEVATED (>=2x threshold)")
+        elif (
+            isinstance(fold_change, (int, float))
+            and not (fold_change != fold_change)
+            and fold_change >= 2.0
+        ):
+            logger.info(
+                f"[WARNING] THRESHOLD COMPARISON: MODERATELY ELEVATED (>=2x threshold)"
+            )
         else:
             logger.info(f"[INFO] THRESHOLD COMPARISON: MILDLY ELEVATED (>1x threshold)")
     else:

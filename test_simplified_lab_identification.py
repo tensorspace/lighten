@@ -78,7 +78,9 @@ def test_simplified_lab_identification():
         try:
             lab_loader.load_data()
             if lab_loader.data is not None and not lab_loader.data.empty:
-                logger.info(f"[SUCCESS] Lab data loaded: {len(lab_loader.data)} records")
+                logger.info(
+                    f"[SUCCESS] Lab data loaded: {len(lab_loader.data)} records"
+                )
 
                 # Test with a sample patient
                 sample_patient = lab_loader.data.iloc[0]["subject_id"]
@@ -130,7 +132,9 @@ def test_simplified_lab_identification():
         logger.info("3. [SUCCESS] Automatic label mapping from d_labitems.csv")
         logger.info("4. [SUCCESS] Proper specimen type differentiation via fluid field")
         logger.info("5. [SUCCESS] No hard-coded mappings (reads dynamically from CSV)")
-        logger.info("6. [SUCCESS] Solves one-to-many mapping issues (each itemid is unique)")
+        logger.info(
+            "6. [SUCCESS] Solves one-to-many mapping issues (each itemid is unique)"
+        )
 
         logger.info("=== TEST 5: Practical Examples ===")
 
@@ -158,7 +162,9 @@ def test_simplified_lab_identification():
 
     logger.info("=== SIMPLIFIED LAB IDENTIFICATION TEST COMPLETE ===")
     logger.info("[COMPLETE] BREAKTHROUGH: No complex LLM categorization needed!")
-    logger.info("[COMPLETE] Simple itemid->label mapping solves all issues efficiently!")
+    logger.info(
+        "[COMPLETE] Simple itemid->label mapping solves all issues efficiently!"
+    )
 
 
 if __name__ == "__main__":

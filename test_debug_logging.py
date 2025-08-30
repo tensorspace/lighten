@@ -179,7 +179,9 @@ def test_debug_logging():
     logger.info("[SUCCESS] Clinical interpretation of results")
 
     logger.info("\n[COMPLETE] ENHANCED DEBUGGING LOGS DEMONSTRATION COMPLETE!")
-    logger.info("[COMPLETE] These logs will help debug unit conversion issues in MI diagnosis!")
+    logger.info(
+        "[COMPLETE] These logs will help debug unit conversion issues in MI diagnosis!"
+    )
     logger.info("=" * 80)
 
 

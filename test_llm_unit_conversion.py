@@ -179,7 +179,9 @@ def test_llm_unit_conversion():
         lab_loader = LabDataLoader(lab_events_path, d_labitems_path)
         troponin_analyzer = TroponinAnalyzer(lab_loader)
 
-        logger.info("[SUCCESS] TroponinAnalyzer initialized with LLM unit conversion support")
+        logger.info(
+            "[SUCCESS] TroponinAnalyzer initialized with LLM unit conversion support"
+        )
 
         # Test with sample data if available
         try:

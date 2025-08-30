@@ -53,9 +53,13 @@ def test_enhanced_lab_functionality():
                     if col not in lab_loader.data.columns
                 ]
 
-                logger.info(f"[SUCCESS] Critical columns available: {available_columns}")
+                logger.info(
+                    f"[SUCCESS] Critical columns available: {available_columns}"
+                )
                 if missing_columns:
-                    logger.warning(f"[WARNING] Critical columns missing: {missing_columns}")
+                    logger.warning(
+                        f"[WARNING] Critical columns missing: {missing_columns}"
+                    )
 
                 # Test sample data with units
                 sample_data = lab_loader.data.head(5)
@@ -101,7 +105,9 @@ def test_enhanced_lab_functionality():
         # Test enhanced troponin analyzer
         try:
             troponin_analyzer = TroponinAnalyzer(lab_loader)
-            logger.info("[SUCCESS] TroponinAnalyzer initialized with enhanced functionality")
+            logger.info(
+                "[SUCCESS] TroponinAnalyzer initialized with enhanced functionality"
+            )
 
             if lab_loader.data is not None and not lab_loader.data.empty:
                 # Test with sample patient

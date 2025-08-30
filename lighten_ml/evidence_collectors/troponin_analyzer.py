@@ -170,7 +170,9 @@ class TroponinAnalyzer(BaseEvidenceCollector):
                     )
 
                 # Use unit-aware threshold comparison
-                logger.info(f"[THRESHOLD] TROPONIN TEST: Performing threshold comparison...")
+                logger.info(
+                    f"[THRESHOLD] TROPONIN TEST: Performing threshold comparison..."
+                )
                 threshold_result = is_above_troponin_threshold(
                     value, unit, self.TROPONIN_THRESHOLD
                 )
@@ -228,7 +230,9 @@ class TroponinAnalyzer(BaseEvidenceCollector):
         # DETAILED DEBUGGING FOR TROPONIN ANALYSIS
         logger.info(f"TROPONIN DEBUG - Total values to analyze: {len(troponin_values)}")
         logger.info(f"TROPONIN DEBUG - Threshold: {self.TROPONIN_THRESHOLD} ng/mL")
-        logger.info(f"TROPONIN DEBUG - 5x Threshold: {self.TROPONIN_THRESHOLD * 5} ng/mL")
+        logger.info(
+            f"TROPONIN DEBUG - 5x Threshold: {self.TROPONIN_THRESHOLD * 5} ng/mL"
+        )
 
         # Log first few troponin values for debugging
         for i, t in enumerate(troponin_values[:5]):
@@ -239,7 +243,9 @@ class TroponinAnalyzer(BaseEvidenceCollector):
         # Check for single elevated value scenarios FIRST (per clinical guideline)
         single_elevated_result = self._check_single_elevated_scenarios(troponin_values)
         if single_elevated_result["met"]:
-            logger.info(f"TROPONIN DECISION - Single elevated scenario met: {single_elevated_result['type']}")
+            logger.info(
+                f"TROPONIN DECISION - Single elevated scenario met: {single_elevated_result['type']}"
+            )
             return True, {
                 "criteria": "Single elevated value scenario",
                 "details": single_elevated_result,
@@ -249,7 +255,7 @@ class TroponinAnalyzer(BaseEvidenceCollector):
         # Standard analysis for multiple values
         has_one_elevated = any(t["above_threshold"] for t in troponin_values)
         elevated_count = sum(1 for t in troponin_values if t["above_threshold"])
-        max_value = max(t.get('value', 0) for t in troponin_values)
+        max_value = max(t.get("value", 0) for t in troponin_values)
 
         logger.info(f"TROPONIN DEBUG - Has one elevated: {has_one_elevated}")
         logger.info(f"TROPONIN DEBUG - Total elevated values: {elevated_count}")
@@ -357,7 +363,9 @@ class TroponinAnalyzer(BaseEvidenceCollector):
                 # Validate pattern significance before accepting
                 if self._validate_pattern_significance(prev_val, curr_val, "rise"):
                     increase_pct = ((curr_val - prev_val) / prev_val) * 100
-                    logger.info(f"TROPONIN RISE PATTERN - Case 2: Significant increase {prev_val} → {curr_val} ng/mL ({increase_pct:.1f}% increase)")
+                    logger.info(
+                        f"TROPONIN RISE PATTERN - Case 2: Significant increase {prev_val} → {curr_val} ng/mL ({increase_pct:.1f}% increase)"
+                    )
                     result["met"] = True
                     result["details"].append(
                         {
@@ -403,7 +411,9 @@ class TroponinAnalyzer(BaseEvidenceCollector):
             # Case 1: Peak above threshold with subsequent decline (≥25%)
             if prev_val > self.TROPONIN_THRESHOLD and curr_val <= 0.75 * prev_val:
                 decrease_pct = ((prev_val - curr_val) / prev_val) * 100
-                logger.info(f"TROPONIN FALL PATTERN - Case 1: Peak decline {prev_val} → {curr_val} ng/mL ({decrease_pct:.1f}% decrease)")
+                logger.info(
+                    f"TROPONIN FALL PATTERN - Case 1: Peak decline {prev_val} → {curr_val} ng/mL ({decrease_pct:.1f}% decrease)"
+                )
                 result["met"] = True
                 result["details"].append(
                     {
@@ -415,11 +425,17 @@ class TroponinAnalyzer(BaseEvidenceCollector):
                         "indices": (i - 1, i),
                     }
                 )
-            
+
             # Case 2: Declining from elevated baseline (≥25%)
-            elif prev_val > self.TROPONIN_THRESHOLD and curr_val < prev_val and curr_val <= 0.75 * prev_val:
+            elif (
+                prev_val > self.TROPONIN_THRESHOLD
+                and curr_val < prev_val
+                and curr_val <= 0.75 * prev_val
+            ):
                 decrease_pct = ((prev_val - curr_val) / prev_val) * 100
-                logger.info(f"TROPONIN FALL PATTERN - Case 2: Elevated baseline decline {prev_val} → {curr_val} ng/mL ({decrease_pct:.1f}% decrease)")
+                logger.info(
+                    f"TROPONIN FALL PATTERN - Case 2: Elevated baseline decline {prev_val} → {curr_val} ng/mL ({decrease_pct:.1f}% decrease)"
+                )
                 result["met"] = True
                 result["details"].append(
                     {
@@ -436,71 +452,83 @@ class TroponinAnalyzer(BaseEvidenceCollector):
 
     def _check_single_elevated_scenarios(self, values: List[Dict]) -> Dict:
         """Check for single elevated value scenarios per clinical guideline.
-        
+
         Scenarios that meet criteria without rise/fall pattern:
         (1) Single troponin >5x threshold (>0.07 ng/mL)
         (2) Clinical presentation + single troponin (requires clinical context)
         """
         result = {"met": False, "type": None, "reason": None, "value": None}
-        
+
         # Calculate 5x threshold (0.014 * 5 = 0.07 ng/mL)
         five_x_threshold = self.TROPONIN_THRESHOLD * 5
-        
+
         # Check each value for >5x threshold scenario
         for i, val_dict in enumerate(values):
-            value = val_dict.get('value', 0)
-            
+            value = val_dict.get("value", 0)
+
             # Scenario 1: Single troponin >5x threshold
             if value > five_x_threshold:
-                logger.info(f"TROPONIN SINGLE ELEVATED - Value {i+1}: {value} ng/mL > {five_x_threshold} ng/mL (5x threshold)")
+                logger.info(
+                    f"TROPONIN SINGLE ELEVATED - Value {i+1}: {value} ng/mL > {five_x_threshold} ng/mL (5x threshold)"
+                )
                 result = {
                     "met": True,
                     "type": "single_5x_threshold",
                     "reason": f"Single troponin value >5x threshold: {value} ng/mL > {five_x_threshold} ng/mL",
                     "value": value,
                     "threshold_multiple": value / self.TROPONIN_THRESHOLD,
-                    "index": i
+                    "index": i,
                 }
                 return result
-        
+
         # Scenario 2: Clinical presentation + single troponin
         # Note: This requires clinical context integration (future enhancement)
-        if len(values) == 1 and values[0].get('above_threshold', False):
-            single_value = values[0].get('value', 0)
-            logger.info(f"TROPONIN SINGLE ELEVATED - Single troponin above threshold: {single_value} ng/mL")
-            logger.info(f"TROPONIN SINGLE ELEVATED - Clinical context required for single troponin exception")
+        if len(values) == 1 and values[0].get("above_threshold", False):
+            single_value = values[0].get("value", 0)
+            logger.info(
+                f"TROPONIN SINGLE ELEVATED - Single troponin above threshold: {single_value} ng/mL"
+            )
+            logger.info(
+                f"TROPONIN SINGLE ELEVATED - Clinical context required for single troponin exception"
+            )
             # For now, we note this but don't automatically qualify it
             # This will be handled by clinical context integration
-        
+
         return result
 
-    def _validate_pattern_significance(self, prev_val: float, curr_val: float, pattern_type: str) -> bool:
+    def _validate_pattern_significance(
+        self, prev_val: float, curr_val: float, pattern_type: str
+    ) -> bool:
         """Validate that patterns meet minimum significance thresholds per clinical guideline.
-        
+
         Args:
             prev_val: Previous troponin value
-            curr_val: Current troponin value  
+            curr_val: Current troponin value
             pattern_type: Type of pattern ('rise' or 'fall')
-            
+
         Returns:
             True if pattern meets significance threshold, False otherwise
         """
         if prev_val <= 0:  # Avoid division by zero
             return False
-            
+
         if pattern_type == "rise":
             # For rise: require ≥50% increase when baseline is above threshold
             if prev_val > self.TROPONIN_THRESHOLD:
                 increase_pct = ((curr_val - prev_val) / prev_val) * 100
                 if increase_pct < 50:
-                    logger.info(f"TROPONIN PATTERN REJECTED - Rise pattern insufficient: {increase_pct:.1f}% < 50% required")
+                    logger.info(
+                        f"TROPONIN PATTERN REJECTED - Rise pattern insufficient: {increase_pct:.1f}% < 50% required"
+                    )
                     return False
-        
+
         elif pattern_type == "fall":
             # For fall: require ≥25% decrease
             decrease_pct = ((prev_val - curr_val) / prev_val) * 100
             if decrease_pct < 25:
-                logger.info(f"TROPONIN PATTERN REJECTED - Fall pattern insufficient: {decrease_pct:.1f}% < 25% required")
+                logger.info(
+                    f"TROPONIN PATTERN REJECTED - Fall pattern insufficient: {decrease_pct:.1f}% < 25% required"
+                )
                 return False
-        
+
         return True
