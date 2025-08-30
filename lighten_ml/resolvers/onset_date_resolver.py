@@ -1,13 +1,20 @@
 """Resolver for determining the onset date of Myocardial Infarction."""
 
+import logging
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
 from dateutil.parser import parse as date_parse
 
+logger = logging.getLogger(__name__)
+
 
 class OnsetDateResolver:
     """Determines the MI onset date based on a hierarchy of evidence."""
+
+    def __init__(self, llm_client=None):
+        """Initialize the resolver with optional LLM client for enhanced analysis."""
+        self.llm_client = llm_client
 
     def resolve(
         self, evidence: Dict[str, Any], admission_time: Optional[pd.Timestamp] = None
@@ -144,3 +151,268 @@ class OnsetDateResolver:
                 if timestamp_str:
                     return self._parse_date(timestamp_str)
         return None
+
+    def resolve_onset_date_with_history(
+        self, patient_id: str, visit_history: List[Dict], evidence: Dict[str, Any]
+    ) -> Optional[str]:
+        """Enhanced onset date resolution using complete patient visit history.
+
+        This method analyzes the patient's complete visit history to determine
+        the most accurate MI onset date by considering:
+        1. Chronological symptom progression across visits
+        2. First appearance of cardiac biomarkers
+        3. Historical clinical context and prior MI episodes
+        4. LLM-based analysis of temporal patterns in clinical notes
+
+        Args:
+            patient_id: Patient subject_id
+            visit_history: List of all patient visits with clinical texts
+            evidence: Aggregated evidence across all visits
+
+        Returns:
+            Best estimate of MI onset date or None if undetermined
+        """
+        logger.info(
+            f"[ONSET_RESOLUTION] {patient_id} - Resolving MI onset date using complete patient history"
+        )
+        logger.info(
+            f"[ONSET_RESOLUTION] {patient_id} - Analyzing {len(visit_history)} visits for temporal patterns"
+        )
+        logger.debug(
+            f"[DEBUG] {patient_id} - Starting historical onset date resolution process"
+        )
+
+        # Step 1: Find earliest troponin elevation across all visits
+        logger.debug(
+            f"[DEBUG] {patient_id} - Step 1: Searching for earliest troponin elevation"
+        )
+        earliest_troponin_date = self._find_earliest_historical_troponin(evidence)
+        if earliest_troponin_date:
+            logger.info(
+                f"[ONSET_RESULT] {patient_id} - Earliest troponin elevation: {earliest_troponin_date}"
+            )
+        else:
+            logger.debug(
+                f"[DEBUG] {patient_id} - No troponin elevation found in patient history"
+            )
+
+        # Step 2: Find earliest symptom onset across all visits
+        logger.debug(
+            f"[DEBUG] {patient_id} - Step 2: Searching for earliest symptom onset"
+        )
+        earliest_symptom_date = self._find_earliest_historical_symptoms(evidence)
+        if earliest_symptom_date:
+            logger.info(
+                f"[ONSET_RESULT] {patient_id} - Earliest symptom onset: {earliest_symptom_date}"
+            )
+        else:
+            logger.debug(
+                f"[DEBUG] {patient_id} - No symptom onset dates found in patient history"
+            )
+
+        # Step 3: Use LLM for comprehensive temporal analysis if available
+        logger.debug(
+            f"[DEBUG] {patient_id} - Step 3: Attempting LLM-based temporal analysis"
+        )
+        llm_onset_date = None
+        if self.llm_client:
+            llm_onset_date = self._llm_analyze_historical_onset(
+                patient_id, visit_history, evidence
+            )
+            if llm_onset_date:
+                logger.info(
+                    f"[{patient_id}] LLM-determined onset date: {llm_onset_date}"
+                )
+
+        # Step 4: Apply hierarchical decision logic
+        onset_candidates = [
+            ("LLM Analysis", llm_onset_date),
+            ("Earliest Symptoms", earliest_symptom_date),
+            ("Earliest Troponin", earliest_troponin_date),
+        ]
+
+        for source, date in onset_candidates:
+            if date:
+                logger.info(
+                    f"[{patient_id}] Selected onset date: {date} (source: {source})"
+                )
+                return date
+
+        # Step 5: Fallback to first visit date if no specific onset found
+        if visit_history:
+            fallback_date = visit_history[0]["chartdate"].strftime("%Y-%m-%d")
+            logger.info(
+                f"[{patient_id}] Using fallback onset date: {fallback_date} (first visit)"
+            )
+            return fallback_date
+
+        logger.warning(f"[{patient_id}] Could not determine MI onset date")
+        return None
+
+    def _find_earliest_historical_troponin(
+        self, evidence: Dict[str, Any]
+    ) -> Optional[str]:
+        """Find the earliest troponin elevation across all patient visits."""
+        troponin_tests = evidence.get("troponin", {}).get("troponin_tests", [])
+
+        if not troponin_tests:
+            return None
+
+        # Sort by timestamp and find first elevated test
+        elevated_tests = [
+            test for test in troponin_tests if test.get("above_threshold")
+        ]
+        if not elevated_tests:
+            return None
+
+        # Sort by timestamp
+        elevated_tests.sort(key=lambda x: x.get("timestamp", ""))
+        earliest_test = elevated_tests[0]
+
+        timestamp = earliest_test.get("timestamp")
+        if timestamp:
+            try:
+                parsed_date = date_parse(timestamp)
+                return parsed_date.strftime("%Y-%m-%d")
+            except Exception as e:
+                logger.warning(f"Error parsing troponin timestamp {timestamp}: {e}")
+
+        return None
+
+    def _find_earliest_historical_symptoms(
+        self, evidence: Dict[str, Any]
+    ) -> Optional[str]:
+        """Find the earliest symptom onset across all patient visits."""
+        symptoms = evidence.get("clinical", {}).get("symptoms", [])
+
+        if not symptoms:
+            return None
+
+        earliest_date = None
+
+        for symptom in symptoms:
+            onset_time = symptom.get("onset_time")
+            if onset_time and onset_time != "unspecified":
+                try:
+                    # Try to parse relative dates like "yesterday morning", "2 days ago"
+                    parsed_date = self._parse_relative_date(onset_time)
+                    if parsed_date:
+                        if earliest_date is None or parsed_date < earliest_date:
+                            earliest_date = parsed_date
+                except Exception as e:
+                    logger.debug(
+                        f"Could not parse symptom onset time '{onset_time}': {e}"
+                    )
+
+        if earliest_date:
+            return earliest_date.strftime("%Y-%m-%d")
+
+        return None
+
+    def _parse_relative_date(self, relative_date_str: str) -> Optional[Any]:
+        """Parse relative date strings like 'yesterday morning', '2 days ago'."""
+        # This would be enhanced with more sophisticated date parsing
+        # For now, return None to indicate unparseable
+        return None
+
+    def _llm_analyze_historical_onset(
+        self, patient_id: str, visit_history: List[Dict], evidence: Dict[str, Any]
+    ) -> Optional[str]:
+        """Use LLM to analyze complete patient history for MI onset date."""
+        if not self.llm_client:
+            return None
+
+        try:
+            # Compile comprehensive clinical context
+            clinical_context = self._compile_historical_context(visit_history, evidence)
+
+            # Create LLM prompt for temporal analysis
+            prompt = self._create_onset_analysis_prompt(patient_id, clinical_context)
+
+            # Get LLM analysis
+            response = self.llm_client.call_llm(prompt)
+
+            if response and "onset_date" in response:
+                return response["onset_date"]
+
+        except Exception as e:
+            logger.error(
+                f"LLM onset date analysis failed for patient {patient_id}: {e}"
+            )
+
+        return None
+
+    def _compile_historical_context(
+        self, visit_history: List[Dict], evidence: Dict[str, Any]
+    ) -> str:
+        """Compile comprehensive clinical context from all visits."""
+        context_parts = []
+
+        # Add visit chronology
+        context_parts.append("PATIENT VISIT CHRONOLOGY:")
+        for i, visit in enumerate(visit_history, 1):
+            context_parts.append(
+                f"Visit {i} ({visit['chartdate']}): {visit['hadm_id']}"
+            )
+
+        # Add clinical evidence summary
+        context_parts.append("\nCLINICAL EVIDENCE SUMMARY:")
+
+        # Troponin data
+        troponin_tests = evidence.get("troponin", {}).get("troponin_tests", [])
+        if troponin_tests:
+            context_parts.append(f"Troponin tests: {len(troponin_tests)} total")
+            elevated_count = sum(
+                1 for test in troponin_tests if test.get("above_threshold")
+            )
+            context_parts.append(f"Elevated troponin tests: {elevated_count}")
+
+        # Symptoms
+        symptoms = evidence.get("clinical", {}).get("symptoms", [])
+        if symptoms:
+            context_parts.append(f"Symptoms documented: {len(symptoms)}")
+            for symptom in symptoms[:5]:  # Show first 5 symptoms
+                context_parts.append(
+                    f"  - {symptom.get('symptom', 'Unknown')}: {symptom.get('onset_time', 'timing unspecified')}"
+                )
+
+        # Add clinical notes excerpts
+        context_parts.append("\nCLINICAL NOTES EXCERPTS:")
+        for visit in visit_history:
+            # Add first 500 characters of each visit's notes
+            text_excerpt = (
+                visit["text"][:500] + "..."
+                if len(visit["text"]) > 500
+                else visit["text"]
+            )
+            context_parts.append(f"\nVisit {visit['hadm_id']} ({visit['chartdate']}):")
+            context_parts.append(text_excerpt)
+
+        return "\n".join(context_parts)
+
+    def _create_onset_analysis_prompt(
+        self, patient_id: str, clinical_context: str
+    ) -> str:
+        """Create LLM prompt for MI onset date analysis."""
+        return f"""
+Analyze the complete clinical history for patient {patient_id} to determine the most accurate Myocardial Infarction onset date.
+
+CLINICAL CONTEXT:
+{clinical_context}
+
+TASK:
+Based on the chronological clinical evidence, determine the most likely MI onset date. Consider:
+1. First mention of cardiac symptoms (chest pain, shortness of breath, etc.)
+2. First elevated cardiac biomarkers (troponin)
+3. Clinical timeline and progression
+4. Any explicit mentions of symptom onset timing
+
+RESPONSE FORMAT:
+{{
+    "onset_date": "YYYY-MM-DD or null if undetermined",
+    "rationale": "Brief explanation of the reasoning",
+    "confidence": "high/medium/low"
+}}
+
+Focus on finding the earliest credible evidence of MI onset, not just the diagnosis date.
+"""

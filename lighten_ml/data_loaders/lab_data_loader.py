@@ -858,3 +858,257 @@ class LabDataLoader(BaseDataLoader):
         # Convert to list of tuples
         admissions = [tuple(row) for row in admissions_df.itertuples(index=False)]
         return admissions
+
+    def get_patient_troponin_history(self, patient_id: str) -> pd.DataFrame:
+        """Get complete troponin history for a patient across all admissions.
+
+        Args:
+            patient_id: Patient subject_id
+
+        Returns:
+            DataFrame with all troponin tests for the patient, sorted chronologically
+        """
+        logger.info(
+            f"[TROPONIN_HISTORY] {patient_id} - Getting complete troponin history across all admissions"
+        )
+        logger.debug(
+            f"[DEBUG] {patient_id} - Starting patient-level troponin data collection"
+        )
+
+        if self.data is None:
+            logger.debug(f"[DEBUG] {patient_id} - Lab data not loaded, loading now")
+            self.load_data()
+
+        # Get all lab data for this patient across all admissions
+        logger.debug(f"[DEBUG] {patient_id} - Filtering lab data for patient")
+        patient_data = self.data[self.data["subject_id"] == patient_id]
+
+        if patient_data.empty:
+            logger.warning(f"[WARNING] {patient_id} - No lab data found for patient")
+            logger.debug(
+                f"[DEBUG] {patient_id} - Available patient IDs sample: {self.data['subject_id'].unique()[:5].tolist()}"
+            )
+            return pd.DataFrame()
+
+        logger.debug(
+            f"[DEBUG] {patient_id} - Found {len(patient_data)} total lab records"
+        )
+        logger.debug(
+            f"[DEBUG] {patient_id} - Lab records span {patient_data['hadm_id'].nunique()} admissions"
+        )
+
+        # Filter for troponin tests using itemid 51003 (Troponin T)
+        troponin_itemids = [51003]  # Based on clinical guideline requirement
+        logger.debug(
+            f"[DEBUG] {patient_id} - Filtering for troponin itemids: {troponin_itemids}"
+        )
+        troponin_data = patient_data[patient_data["itemid"].isin(troponin_itemids)]
+
+        if troponin_data.empty:
+            logger.info(
+                f"[TROPONIN_RESULT] {patient_id} - No troponin tests found across all admissions"
+            )
+            logger.debug(
+                f"[DEBUG] {patient_id} - Available itemids in patient data: {patient_data['itemid'].unique()[:10].tolist()}"
+            )
+            return pd.DataFrame()
+
+        # Sort chronologically by charttime
+        logger.debug(f"[DEBUG] {patient_id} - Sorting troponin data chronologically")
+        troponin_data = troponin_data.sort_values("charttime")
+
+        # Generate comprehensive statistics
+        unique_admissions = troponin_data["hadm_id"].nunique()
+        date_range_start = troponin_data["charttime"].min()
+        date_range_end = troponin_data["charttime"].max()
+        value_range = (
+            troponin_data["valuenum"].describe()
+            if "valuenum" in troponin_data.columns
+            else None
+        )
+
+        logger.info(
+            f"[TROPONIN_RESULT] {patient_id} - Found {len(troponin_data)} troponin tests across {unique_admissions} admissions"
+        )
+        logger.info(
+            f"[TROPONIN_RESULT] {patient_id} - Date range: {date_range_start} to {date_range_end}"
+        )
+
+        if value_range is not None:
+            logger.debug(f"[DEBUG] {patient_id} - Troponin value statistics:")
+            logger.debug(
+                f"[DEBUG] {patient_id} -   Min: {value_range['min']}, Max: {value_range['max']}"
+            )
+            logger.debug(
+                f"[DEBUG] {patient_id} -   Mean: {value_range['mean']:.4f}, Median: {value_range['50%']:.4f}"
+            )
+
+        # Log individual tests for debugging
+        if len(troponin_data) <= 10:  # Only log details for small datasets
+            for idx, row in troponin_data.iterrows():
+                logger.debug(
+                    f"[DEBUG] {patient_id} - Test: {row['hadm_id']} on {row['charttime']} = {row.get('valuenum', 'N/A')} {row.get('valueuom', '')}"
+                )
+
+        logger.debug(f"[DEBUG] {patient_id} - Troponin history collection completed")
+        return troponin_data
+
+    def get_patient_lab_history(
+        self, patient_id: str, itemids: List[int]
+    ) -> pd.DataFrame:
+        """Get complete lab test history for a patient across all admissions.
+
+        Args:
+            patient_id: Patient subject_id
+            itemids: List of lab test itemids to retrieve
+
+        Returns:
+            DataFrame with all specified lab tests for the patient, sorted chronologically
+        """
+        logger.info(
+            f"[LAB_HISTORY] {patient_id} - Getting lab history for itemids: {itemids}"
+        )
+        logger.debug(
+            f"[DEBUG] {patient_id} - Starting patient-level lab data collection for {len(itemids)} item types"
+        )
+
+        if self.data is None:
+            logger.debug(f"[DEBUG] {patient_id} - Lab data not loaded, loading now")
+            self.load_data()
+
+        # Get all lab tests for this patient
+        logger.debug(f"[DEBUG] {patient_id} - Filtering lab data for patient")
+        patient_data = self.data[self.data["subject_id"] == patient_id]
+
+        if patient_data.empty:
+            logger.warning(f"[WARNING] {patient_id} - No lab data found for patient")
+            logger.debug(
+                f"[DEBUG] {patient_id} - Available patient IDs sample: {self.data['subject_id'].unique()[:5].tolist()}"
+            )
+            return pd.DataFrame()
+
+        logger.debug(
+            f"[DEBUG] {patient_id} - Found {len(patient_data)} total lab records"
+        )
+        logger.debug(
+            f"[DEBUG] {patient_id} - Available itemids in patient data: {sorted(patient_data['itemid'].unique())[:20]}"
+        )
+
+        # Filter for specified itemids
+        logger.debug(
+            f"[DEBUG] {patient_id} - Filtering for requested itemids: {itemids}"
+        )
+        lab_data = patient_data[patient_data["itemid"].isin(itemids)]
+
+        if lab_data.empty:
+            logger.info(
+                f"[LAB_RESULT] {patient_id} - No lab tests found for itemids {itemids}"
+            )
+            logger.debug(
+                f"[DEBUG] {patient_id} - Requested itemids not found in patient data"
+            )
+            return pd.DataFrame()
+
+        # Sort chronologically by charttime
+        logger.debug(f"[DEBUG] {patient_id} - Sorting lab data chronologically")
+        lab_data = lab_data.sort_values("charttime")
+
+        # Generate statistics by itemid
+        unique_admissions = lab_data["hadm_id"].nunique()
+        date_range_start = lab_data["charttime"].min()
+        date_range_end = lab_data["charttime"].max()
+
+        logger.info(
+            f"[LAB_RESULT] {patient_id} - Found {len(lab_data)} lab tests across {unique_admissions} admissions"
+        )
+        logger.info(
+            f"[LAB_RESULT] {patient_id} - Date range: {date_range_start} to {date_range_end}"
+        )
+
+        # Log breakdown by itemid
+        itemid_counts = lab_data["itemid"].value_counts()
+        for itemid, count in itemid_counts.items():
+            logger.debug(f"[DEBUG] {patient_id} - ItemID {itemid}: {count} tests")
+
+        logger.debug(f"[DEBUG] {patient_id} - Lab history collection completed")
+        return lab_data
+
+    def get_all_patient_ids(self) -> List[str]:
+        """Get list of all unique patient IDs in the lab data.
+
+        Returns:
+            List of unique patient subject_ids
+        """
+        logger.debug(f"[DEBUG] Getting all unique patient IDs from lab data")
+
+        if self.data is None:
+            logger.debug(f"[DEBUG] Lab data not loaded, loading now")
+            self.load_data()
+
+        if "subject_id" not in self.data.columns:
+            logger.error(f"[ERROR] No subject_id column found in lab data")
+            logger.debug(f"[DEBUG] Available columns: {list(self.data.columns)}")
+            return []
+
+        logger.debug(
+            f"[DEBUG] Extracting unique patient IDs from {len(self.data)} lab records"
+        )
+        patient_ids = self.data["subject_id"].dropna().unique().tolist()
+
+        logger.info(
+            f"[PATIENT_IDS] Found {len(patient_ids)} unique patients in lab data"
+        )
+        logger.debug(f"[DEBUG] Sample patient IDs: {patient_ids[:5]}")
+
+        return patient_ids
+
+    def get_patient_admission_summary(self, patient_id: str) -> Dict[str, Any]:
+        """Get summary of all admissions for a patient with lab data.
+
+        Args:
+            patient_id: Patient subject_id
+
+        Returns:
+            Dictionary with admission summary statistics
+        """
+        if self.data is None:
+            self.load_data()
+
+        patient_data = self.data[self.data["subject_id"] == patient_id]
+
+        if patient_data.empty:
+            return {
+                "patient_id": patient_id,
+                "total_admissions": 0,
+                "total_lab_tests": 0,
+                "date_range": None,
+                "admission_ids": [],
+            }
+
+        admission_ids = patient_data["hadm_id"].dropna().unique().tolist()
+        total_tests = len(patient_data)
+
+        # Get date range
+        date_range = None
+        if "charttime" in patient_data.columns:
+            valid_dates = patient_data["charttime"].dropna()
+            if not valid_dates.empty:
+                date_range = {
+                    "first_test": valid_dates.min(),
+                    "last_test": valid_dates.max(),
+                    "span_days": (valid_dates.max() - valid_dates.min()).days,
+                }
+
+        summary = {
+            "patient_id": patient_id,
+            "total_admissions": len(admission_ids),
+            "total_lab_tests": total_tests,
+            "date_range": date_range,
+            "admission_ids": admission_ids,
+        }
+
+        logger.info(
+            f"[{patient_id}] Patient summary: {summary['total_admissions']} admissions, {summary['total_lab_tests']} lab tests"
+        )
+
+        return summary
