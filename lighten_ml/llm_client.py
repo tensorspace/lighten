@@ -169,6 +169,26 @@ class LightenLLMClient:
                 logger.info("LLM API request successful.")
                 data = resp.json()
                 result = data["choices"][0]["message"]["content"]
+                
+                # Log LLM response details for debugging
+                logger.info(f"LLM RAW RESPONSE - Model: {self.model}")
+                logger.info(f"LLM RAW RESPONSE - Length: {len(result)} characters")
+                logger.info(f"LLM RAW RESPONSE - Content preview: {result[:200]}...")
+                
+                # Try to parse as JSON to log structure
+                try:
+                    parsed_json = json.loads(result)
+                    logger.info(f"LLM PARSED JSON - Keys: {list(parsed_json.keys()) if isinstance(parsed_json, dict) else 'Not a dict'}")
+                    if isinstance(parsed_json, dict):
+                        for key, value in parsed_json.items():
+                            if isinstance(value, list):
+                                logger.info(f"LLM PARSED JSON - {key}: {len(value)} items")
+                            elif isinstance(value, dict):
+                                logger.info(f"LLM PARSED JSON - {key}: dict with {len(value)} keys")
+                            else:
+                                logger.info(f"LLM PARSED JSON - {key}: {type(value).__name__}")
+                except json.JSONDecodeError:
+                    logger.info("LLM RAW RESPONSE - Not valid JSON format")
 
                 # Update cache
                 if len(self.cache) >= self.cache_size:

@@ -76,6 +76,23 @@ class ImagingEvidenceExtractor(BaseEvidenceCollector):
                 logger.info(
                     f"[{hadm_id}] IMAGING EXTRACTION - LLM extraction successful: {len(findings)} findings"
                 )
+                
+                # Log detailed LLM results
+                logger.info(f"[{hadm_id}] LLM IMAGING RESULTS:")
+                if findings:
+                    mi_related_count = sum(1 for f in findings if f.get('mi_related', False))
+                    new_findings_count = sum(1 for f in findings if f.get('is_new', False))
+                    logger.info(f"[{hadm_id}]   Total findings: {len(findings)}")
+                    logger.info(f"[{hadm_id}]   MI-related findings: {mi_related_count}")
+                    logger.info(f"[{hadm_id}]   New/acute findings: {new_findings_count}")
+                    
+                    for i, finding in enumerate(findings[:3], 1):  # Log first 3
+                        logger.info(f"[{hadm_id}]     {i}. {finding.get('finding', 'unknown')}")
+                        logger.info(f"[{hadm_id}]        MI-related: {finding.get('mi_related', 'N/A')}")
+                        logger.info(f"[{hadm_id}]        Is new: {finding.get('is_new', 'N/A')}")
+                        logger.info(f"[{hadm_id}]        Context snippet: {finding.get('context', 'N/A')[:80]}...")
+                else:
+                    logger.info(f"[{hadm_id}]   LLM extracted no imaging findings")
             except Exception as e:
                 logger.warning(
                     f"[{hadm_id}] IMAGING EXTRACTION - LLM extraction failed: {str(e)}, falling back to regex"

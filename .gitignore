@@ -12,3 +12,12 @@ __pycache__/
 output/
 *.csv
 *.json
+
+# Log files
+*.log
+lighten_pipeline.log
+llm_cache.json
+
+# Pipeline output files
+combined_results.csv
+requirement_compliant_output.json
