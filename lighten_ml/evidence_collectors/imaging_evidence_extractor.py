@@ -44,103 +44,108 @@ class ImagingEvidenceExtractor(BaseEvidenceCollector):
 
     def collect_evidence(self, patient_id: str, hadm_id: str) -> Dict[str, Any]:
         """Collect imaging evidence from notes for a specific admission."""
+        log_prefix = f"[{patient_id}][{hadm_id}] [IMAGING_EXTRACTOR]"
+
         evidence = self._get_evidence_base()
         evidence["imaging_findings"] = []
         evidence["metadata"] = {"extraction_mode": "none"}
 
+        logger.info(f"{log_prefix} Fetching clinical notes for imaging evidence.")
         notes = self.notes_data_loader.get_patient_notes(patient_id, hadm_id)
         # Filter for relevant notes like radiology, echo, etc.
         rad_notes = notes[notes["note_type"].isin(["Echo", "Radiology"])]
+        logger.info(f"{log_prefix} Found {len(rad_notes)} imaging reports out of {len(notes)} total notes.")
 
         # Limit number of notes if configured
         if self.max_notes and len(rad_notes) > self.max_notes:
+            logger.info(f"{log_prefix} Limiting imaging notes from {len(rad_notes)} to {self.max_notes}.")
             rad_notes = rad_notes.head(self.max_notes)
 
         if rad_notes.empty:
+            logger.warning(f"{log_prefix} No imaging reports found.")
             return evidence
 
-        logger.info(
-            f"[{hadm_id}] IMAGING EXTRACTION - Method selection: LLM available={self.llm_client and self.llm_client.enabled}"
-        )
+        logger.info(f"{log_prefix} Processing {len(rad_notes)} imaging reports.")
+
+        try_llm = self.llm_client and self.llm_client.enabled
+        logger.info(f"{log_prefix} Method selection: LLM available={try_llm}")
 
         extracted_with_llm = False
-        if self.llm_client and self.llm_client.enabled:
+        if try_llm:
             try:
-                logger.info(
-                    f"[{hadm_id}] IMAGING EXTRACTION - Attempting LLM extraction..."
-                )
+                logger.info(f"{log_prefix} Attempting LLM extraction...")
                 findings = self._extract_with_llm(rad_notes)
                 evidence["imaging_findings"] = findings
                 evidence["metadata"]["extraction_mode"] = "llm"
                 extracted_with_llm = True
                 logger.info(
-                    f"[{hadm_id}] IMAGING EXTRACTION - LLM extraction successful: {len(findings)} findings"
+                    f"{log_prefix} LLM extraction successful: {len(findings)} findings"
                 )
 
                 # Log detailed LLM results
-                logger.info(f"[{hadm_id}] LLM IMAGING RESULTS:")
                 if findings:
+                    logger.debug(f"{log_prefix} LLM Imaging Results:")
                     mi_related_count = sum(
                         1 for f in findings if f.get("mi_related", False)
                     )
                     new_findings_count = sum(
                         1 for f in findings if f.get("is_new", False)
                     )
-                    logger.info(f"[{hadm_id}]   Total findings: {len(findings)}")
-                    logger.info(
-                        f"[{hadm_id}]   MI-related findings: {mi_related_count}"
+                    logger.debug(f"{log_prefix}   Total findings: {len(findings)}")
+                    logger.debug(
+                        f"{log_prefix}   MI-related findings: {mi_related_count}"
                     )
-                    logger.info(
-                        f"[{hadm_id}]   New/acute findings: {new_findings_count}"
+                    logger.debug(
+                        f"{log_prefix}   New/acute findings: {new_findings_count}"
                     )
 
                     for i, finding in enumerate(findings[:3], 1):  # Log first 3
-                        logger.info(
-                            f"[{hadm_id}]     {i}. {finding.get('finding', 'unknown')}"
+                        logger.debug(
+                            f"{log_prefix}     {i}. {finding.get('finding', 'unknown')}"
                         )
-                        logger.info(
-                            f"[{hadm_id}]        MI-related: {finding.get('mi_related', 'N/A')}"
+                        logger.debug(
+                            f"{log_prefix}        MI-related: {finding.get('mi_related', 'N/A')}"
                         )
-                        logger.info(
-                            f"[{hadm_id}]        Is new: {finding.get('is_new', 'N/A')}"
+                        logger.debug(
+                            f"{log_prefix}        Is new: {finding.get('is_new', 'N/A')}"
                         )
-                        logger.info(
-                            f"[{hadm_id}]        Context snippet: {finding.get('context', 'N/A')[:80]}..."
+                        logger.debug(
+                            f"{log_prefix}        Context snippet: {finding.get('context', 'N/A')[:80]}..."
                         )
                 else:
-                    logger.info(f"[{hadm_id}]   LLM extracted no imaging findings")
+                    logger.debug(f"{log_prefix}   LLM extracted no imaging findings")
             except Exception as e:
                 logger.warning(
-                    f"[{hadm_id}] IMAGING EXTRACTION - LLM extraction failed: {str(e)}, falling back to regex"
+                    f"{log_prefix} LLM extraction failed: {str(e)}, falling back to regex"
                 )
 
         if not extracted_with_llm:
             evidence["metadata"]["extraction_mode"] = (
                 "regex_fallback" if self.llm_client else "regex"
             )
-            logger.info(f"[{hadm_id}] IMAGING EXTRACTION - Using regex extraction")
+            logger.info(f"{log_prefix} Using regex extraction")
             findings = self._extract_with_regex(rad_notes)
             evidence["imaging_findings"] = findings
             logger.info(
-                f"[{hadm_id}] IMAGING EXTRACTION - Regex extraction complete: {len(findings)} findings"
+                f"{log_prefix} Regex extraction complete: {len(findings)} findings"
             )
 
         # Log detailed imaging evidence found
         if findings:
-            logger.info(f"[{hadm_id}] IMAGING EVIDENCE FOUND:")
+            logger.info(f"{log_prefix} Imaging evidence found:")
             for i, finding in enumerate(findings[:3], 1):  # Log first 3 findings
-                logger.info(f"[{hadm_id}]   {i}. {finding.get('finding', 'unknown')}")
-                logger.info(
-                    f"[{hadm_id}]      New/Acute: {finding.get('is_new', 'N/A')}"
+                logger.info(f"{log_prefix}   {i}. {finding.get('finding', 'unknown')}")
+                logger.debug(
+                    f"{log_prefix}      New/Acute: {finding.get('is_new', 'N/A')}"
                 )
-                logger.info(
-                    f"[{hadm_id}]      MI-Related: {finding.get('mi_related', 'N/A')}"
+                logger.debug(
+                    f"{log_prefix}      MI-Related: {finding.get('mi_related', 'N/A')}"
                 )
-                logger.info(
-                    f"[{hadm_id}]      Context: {finding.get('context', 'N/A')[:100]}..."
+                logger.debug(
+                    f"{log_prefix}      Context: {finding.get('context', 'N/A')[:100]}..."
                 )
         else:
-            logger.info(f"[{hadm_id}] IMAGING EVIDENCE - No imaging findings detected")
+            logger.info(f"{log_prefix} No imaging findings detected")
 
         # Add a summary flag for the rule engine
         evidence["wall_motion_abnormalities"] = any(

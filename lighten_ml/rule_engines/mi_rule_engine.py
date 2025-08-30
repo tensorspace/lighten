@@ -91,83 +91,39 @@ class MIRuleEngine(BaseRuleEngine[MIRuleEngineConfig]):
         super().__init__(config or MIRuleEngineConfig())
 
     def evaluate(self, evidence: Dict[str, Any]) -> RuleResult:
-        """Evaluate evidence for Myocardial Infarction.
-
-        Args:
-            evidence: Dictionary containing evidence from data sources
-
-        Returns:
-            RuleResult with the evaluation
-        """
-        logger.info("[MI_EVALUATION] Starting MI diagnosis evaluation")
-        logger.debug(f"[DEBUG] Evidence categories available: {list(evidence.keys())}")
-
-        # Log evidence summary for debugging
-        troponin_data = evidence.get("troponin", {})
-        clinical_data = evidence.get("clinical", {})
-        logger.debug(
-            f"[DEBUG] Troponin available: {troponin_data.get('troponin_available', False)}"
-        )
-        logger.debug(
-            f"[DEBUG] Troponin tests count: {len(troponin_data.get('troponin_tests', []))}"
-        )
-        logger.debug(
-            f"[DEBUG] Clinical symptoms count: {len(clinical_data.get('symptoms', []))}"
-        )
-        logger.debug(
-            f"[DEBUG] Clinical diagnoses count: {len(clinical_data.get('diagnoses', []))}"
-        )
+        """Evaluate evidence for Myocardial Infarction."""
+        logger.info("[RULE_ENGINE] === Starting MI Diagnosis Evaluation ===")
 
         # Initialize result components
-        criteria_met = {
-            "A": False,  # Biomarker criteria
-            "B": False,  # Ischemia criteria
-        }
-
-        evidence_items = []
+        criteria_met = {"A": False, "B": False}
         details = {"criteria_A": {}, "criteria_B": {}}
+        evidence_items = []
 
         # Evaluate Criteria A: Biomarker evidence
-        logger.info("[CRITERIA_A] Starting biomarker evidence evaluation...")
+        logger.info("[RULE_ENGINE] [CRITERIA_A] Evaluating biomarker evidence (Troponin)...")
         a_result = self._evaluate_criteria_a(evidence.get("troponin", {}))
         criteria_met["A"] = a_result["met"]
         details["criteria_A"] = a_result["details"]
         evidence_items.extend(a_result.get("evidence", []))
+        logger.info(f"[RULE_ENGINE] [CRITERIA_A] Result: {'MET' if criteria_met['A'] else 'NOT MET'}")
 
-        logger.info(f"[CRITERIA_A] Result: {'MET' if criteria_met['A'] else 'NOT MET'}")
-        logger.debug(f"[DEBUG] Criteria A details: {a_result['details']}")
-
-        # Early termination optimization: Skip Criteria B if A is not met
+        # Early termination if Criteria A is not met
         if not criteria_met["A"]:
-            logger.info(
-                "[EARLY_TERMINATION] Criteria A not met - skipping Criteria B evaluation"
-            )
-            # Set default values for criteria B (not evaluated)
-            details["criteria_B"] = {
-                "reason": "Not evaluated - Criteria A failed",
-                "early_termination": True,
-            }
+            logger.info("[RULE_ENGINE] Criteria A not met. Final diagnosis is NEGATIVE.")
+            details["criteria_B"] = {"met": False, "reason": "Not evaluated as Criteria A was not met."}
         else:
-            # Evaluate Criteria B: Ischemia evidence (only if A is met)
-            logger.info(
-                "[CRITERIA_B] Criteria A met - proceeding to evaluate ischemia evidence..."
-            )
+            # Evaluate Criteria B: Ischemia evidence
+            logger.info("[RULE_ENGINE] [CRITERIA_B] Criteria A met. Evaluating clinical evidence for ischemia...")
             b_result = self._evaluate_criteria_b(evidence)
             criteria_met["B"] = b_result["met"]
             details["criteria_B"] = b_result["details"]
             evidence_items.extend(b_result.get("evidence", []))
-
-            logger.info(
-                f"[CRITERIA_B] Result: {'MET' if criteria_met['B'] else 'NOT MET'}"
-            )
+            logger.info(f"[RULE_ENGINE] [CRITERIA_B] Result: {'MET' if criteria_met['B'] else 'NOT MET'}")
 
         # Determine overall result
         passed = criteria_met["A"] and criteria_met["B"]
 
-        logger.info("[FINAL_DECISION] Cross-admission evidence evaluation complete")
-        logger.info(f"[FINAL_DECISION] Criteria A (Troponin): {'MET' if criteria_met['A'] else 'NOT MET'}")
-        logger.info(f"[FINAL_DECISION] Criteria B (Clinical): {'MET' if criteria_met['B'] else 'NOT MET'}")
-        logger.info(f"[FINAL_DECISION] *** OVERALL MI DIAGNOSIS: {'POSITIVE' if passed else 'NEGATIVE'} ***")
+        logger.info(f"[RULE_ENGINE] === MI Diagnosis Evaluation Complete: {'POSITIVE' if passed else 'NEGATIVE'} ===")
 
         return RuleResult(
             passed=passed,
@@ -177,305 +133,75 @@ class MIRuleEngine(BaseRuleEngine[MIRuleEngineConfig]):
         )
 
     def evaluate_criteria_a(self, troponin_evidence: Dict[str, Any]) -> Dict[str, Any]:
-        """Public method to evaluate only Criteria A (Troponin Biomarkers).
-
-        Args:
-            troponin_evidence: Dictionary containing troponin data.
-
-        Returns:
-            A dictionary with the evaluation result for Criteria A.
-        """
-        logger.info("[CRITERIA_A_ONLY] Evaluating biomarker evidence...")
+        """Public method to evaluate only Criteria A (Troponin Biomarkers)."""
+        logger.info("[RULE_ENGINE] [CRITERIA_A_ONLY] Evaluating biomarker evidence (Troponin)...")
         result = self._evaluate_criteria_a(troponin_evidence)
-        logger.info(f"[CRITERIA_A_ONLY] Result: {'MET' if result['met'] else 'NOT MET'}")
+        logger.info(f"[RULE_ENGINE] [CRITERIA_A_ONLY] Result: {'MET' if result['met'] else 'NOT MET'}")
         return result
 
     def _evaluate_criteria_a(self, troponin_evidence: Dict[str, Any]) -> Dict[str, Any]:
-        """Evaluate Criteria A: Rise and/or fall of troponin.
+        """Evaluate Criteria A: Rise and/or fall of troponin."""
+        if not troponin_evidence or not troponin_evidence.get("troponin_available", False):
+            return {"met": False, "details": "No troponin data available."}
 
-        Args:
-            troponin_evidence: Dictionary containing troponin test results
+        tests = troponin_evidence.get("troponin_tests", [])
+        if not tests:
+            return {"met": False, "details": "No troponin tests found in the data."}
 
-        Returns:
-            Dictionary with evaluation results
-        """
-        logger.info("=== RULE ENGINE CRITERIA A (BIOMARKER) EVALUATION ===")
-
-        result = {"met": False, "details": {}, "evidence": []}
-
-        logger.info(
-            f"Troponin evidence available: {troponin_evidence.get('troponin_available', False)}"
-        )
-        logger.info(f"Troponin evidence keys: {list(troponin_evidence.keys())}")
-
-        if not troponin_evidence or not troponin_evidence.get(
-            "troponin_available", False
-        ):
-            logger.warning("CRITERIA A FAILED: No troponin data available")
-            result["details"] = {"reason": "No troponin data available"}
-            result["evidence"].append(
-                {
-                    "type": "troponin",
-                    "description": "Troponin test results",
-                    "significance": "No troponin data available",
-                    "confidence": 0.0,
-                }
-            )
-            return result
-
-        # Use the pre-calculated result from TroponinAnalyzer
-        criteria_met = troponin_evidence.get("mi_criteria_met", False)
-        criteria_details = troponin_evidence.get("criteria_details", {})
-
-        # DETAILED LOGGING FOR DEBUGGING
-        logger.info(f"CRITERIA A DEBUG - mi_criteria_met: {criteria_met}")
-        logger.info(f"CRITERIA A DEBUG - criteria_details: {criteria_details}")
-        logger.info(
-            f"CRITERIA A DEBUG - max_troponin: {troponin_evidence.get('max_troponin', 'N/A')}"
-        )
-        logger.info(
-            f"CRITERIA A DEBUG - troponin_tests count: {len(troponin_evidence.get('troponin_tests', []))}"
-        )
-
-        # Log individual troponin values for debugging with unit conversion details
-        troponin_tests = troponin_evidence.get("troponin_tests", [])
-        if troponin_tests:
-            logger.info(
-                f"CRITERIA A DEBUG - Individual troponin values with unit conversion:"
-            )
-            for i, test in enumerate(troponin_tests[:5]):  # Log first 5 tests
-                original_value = test.get("original_value", "N/A")
-                original_unit = test.get("original_unit", "N/A")
-                converted_value = test.get("value", "N/A")
-                converted_unit = test.get("unit", "N/A")
-                above_threshold = test.get("above_threshold", "N/A")
-                threshold_analysis = test.get("threshold_analysis", {})
-                fold_change = threshold_analysis.get("fold_change", "N/A")
-
-                logger.info(f"  [TEST] Test {i+1}:")
-                logger.info(f"    [DATA] Original: {original_value} {original_unit}")
-                logger.info(f"    [DATA] Converted: {converted_value} {converted_unit}")
-                logger.info(f"    [DATA] Above threshold: {above_threshold}")
-
-                # Handle NaN fold_change values
-                if isinstance(fold_change, (int, float)) and not (
-                    fold_change != fold_change
-                ):  # Check for NaN
-                    logger.info(f"    [DATA] Fold change: {fold_change}")
-                else:
-                    logger.info(f"    [DATA] Fold change: N/A (invalid calculation)")
-
-                logger.info(f"    [DATA] Timestamp: {test.get('timestamp', 'N/A')}")
-        else:
-            logger.warning("CRITERIA A DEBUG - No troponin_tests found in evidence")
-
-        if criteria_met:
-            # Determine description based on the type of criteria met
-            if "pattern" in criteria_details.get("criteria", ""):
-                description = f"Troponin shows {criteria_details.get('criteria')}."
-            else:
-                description = "Single elevated troponin detected without clear pattern."
-
-            result.update(
-                {
-                    "met": True,
-                    "details": criteria_details,
-                    "evidence": [
-                        {
-                            "type": "troponin",
-                            "description": description,
-                            "significance": "Meets biomarker criteria for MI.",
-                            "details": criteria_details,
-                        }
-                    ],
-                }
-            )
-        else:
-            logger.warning("CRITERIA A FAILED: Troponin criteria not met")
-            logger.warning(f"CRITERIA A FAILED - mi_criteria_met was: {criteria_met}")
-            logger.warning(
-                f"CRITERIA A FAILED - criteria_details was: {criteria_details}"
-            )
-            result["details"] = {
-                "reason": "No troponin criteria met",
-                "debug_info": criteria_details,
+        # Check for at least one value above the diagnostic threshold
+        above_threshold_tests = [t for t in tests if t.get("above_threshold")]
+        if not above_threshold_tests:
+            return {
+                "met": False,
+                "details": f"No troponin values above threshold of {self.config.troponin_threshold} ng/mL.",
             }
 
-        logger.info(f"CRITERIA A FINAL RESULT: met={result['met']}")
-        return result
+        # Check for rise and/or fall pattern
+        if self.config.require_rise_and_fall and len(tests) > 1:
+            # Simplified check for rise/fall: are there non-identical values?
+            unique_values = {t["value"] for t in tests}
+            if len(unique_values) > 1:
+                return {
+                    "met": True,
+                    "details": "Troponin rise and/or fall detected with at least one value above threshold.",
+                    "evidence": above_threshold_tests,
+                }
+
+        # If rise/fall is not required or not detected, one value above threshold is sufficient
+        return {
+            "met": True,
+            "details": "At least one troponin value was above the diagnostic threshold.",
+            "evidence": above_threshold_tests,
+        }
 
     def _evaluate_criteria_b(self, evidence: Dict[str, Any]) -> Dict[str, Any]:
-        """Evaluate Criteria B: Ischemia evidence.
+        """Evaluate Criteria B: Corroborating evidence of myocardial ischemia."""
+        ischemia_evidence_found = []
 
-        Args:
-            evidence: Dictionary containing all evidence
+        # 1. Symptoms of myocardial ischemia
+        if evidence.get("clinical", {}).get("symptoms"):
+            ischemia_evidence_found.append("Symptoms of myocardial ischemia")
 
-        Returns:
-            Dictionary with evaluation results
-        """
-        logger.info("=== RULE ENGINE CRITERIA B (ISCHEMIA) EVALUATION ===")
+        # 2. New ischemic ECG changes
+        if evidence.get("ecg", {}).get("findings"):
+            ischemia_evidence_found.append("Ischemic ECG changes")
 
-        result = {"met": False, "details": {}, "evidence": []}
+        # 3. Development of pathological Q waves (often in ECG)
+        # (This would require more specific ECG analysis)
 
-        # Log available evidence types for debugging
-        logger.info(
-            f"CRITERIA B DEBUG - Available evidence keys: {list(evidence.keys())}"
-        )
-        logger.info(
-            f"CRITERIA B DEBUG - Clinical symptoms available: {'symptoms' in evidence}"
-        )
-        logger.info(f"CRITERIA B DEBUG - ECG evidence available: {'ecg' in evidence}")
-        logger.info(
-            f"CRITERIA B DEBUG - Imaging evidence available: {'imaging' in evidence}"
-        )
-        logger.info(
-            f"CRITERIA B DEBUG - Angiography evidence available: {'angiography' in evidence}"
-        )
+        # 4. Imaging evidence
+        if evidence.get("imaging", {}).get("findings"):
+            ischemia_evidence_found.append("Imaging evidence of ischemia")
 
-        # Check each type of ischemia evidence
-        evidence_sources = []
+        # 5. Intracoronary thrombus
+        if evidence.get("angiography", {}).get("findings"):
+            ischemia_evidence_found.append("Intracoronary thrombus identified")
 
-        # 1. Symptoms
-        if self.config.consider_clinical_symptoms:
-            # Fix: symptoms are nested under 'clinical' key
-            clinical_evidence = evidence.get("clinical", {})
-            symptoms = clinical_evidence.get("symptoms", [])
-            logger.info(f"CRITERIA B DEBUG - Symptoms found: {len(symptoms)}")
-            if symptoms:
-                logger.info(
-                    f"CRITERIA B DEBUG - First few symptoms: {[s.get('symptom', s.get('name', 'unknown')) for s in symptoms[:3]]}"
-                )
-                evidence_sources.append(
-                    {
-                        "type": "symptoms",
-                        "count": len(symptoms),
-                        "details": symptoms,
-                    }
-                )
-            else:
-                logger.info("CRITERIA B DEBUG - No symptoms found in evidence")
-
-        # 2. ECG findings
-        if self.config.consider_ecg_findings:
-            ecg_evidence = evidence.get("ecg", {})
-            ecg_findings = ecg_evidence.get("ecg_findings", [])
-            mi_related_ecg = [f for f in ecg_findings if f.get("mi_related", False)]
-
-            logger.info(f"CRITERIA B DEBUG - ECG findings total: {len(ecg_findings)}")
-            logger.info(
-                f"CRITERIA B DEBUG - MI-related ECG findings: {len(mi_related_ecg)}"
-            )
-            if mi_related_ecg:
-                logger.info(
-                    f"CRITERIA B DEBUG - ECG findings: {[f.get('finding', 'unknown') for f in mi_related_ecg[:3]]}"
-                )
-                evidence_sources.append(
-                    {
-                        "type": "ecg",
-                        "count": len(mi_related_ecg),
-                        "details": mi_related_ecg,
-                    }
-                )
-            else:
-                logger.info("CRITERIA B DEBUG - No MI-related ECG findings found")
-
-        # 3. Imaging findings
-        if self.config.consider_imaging_evidence:
-            imaging_evidence = evidence.get("imaging", {})
-            wall_motion_abnormalities = imaging_evidence.get(
-                "wall_motion_abnormalities", False
-            )
-            imaging_findings = imaging_evidence.get("imaging_findings", [])
-
-            logger.info(
-                f"CRITERIA B DEBUG - Wall motion abnormalities: {wall_motion_abnormalities}"
-            )
-            logger.info(
-                f"CRITERIA B DEBUG - Imaging findings count: {len(imaging_findings)}"
-            )
-
-            if wall_motion_abnormalities:
-                logger.info(
-                    "CRITERIA B DEBUG - Wall motion abnormalities found - adding to evidence"
-                )
-                evidence_sources.append(
-                    {
-                        "type": "imaging",
-                        "details": imaging_findings,
-                    }
-                )
-            else:
-                logger.info("CRITERIA B DEBUG - No wall motion abnormalities found")
-
-        # 4. Angiographic findings
-        if self.config.consider_angiographic_evidence:
-            angio_evidence = evidence.get("angiography", {})
-            thrombus_present = angio_evidence.get("thrombus_present", False)
-            angio_findings = angio_evidence.get("angiography_findings", [])
-
-            logger.info(f"CRITERIA B DEBUG - Thrombus present: {thrombus_present}")
-            logger.info(
-                f"CRITERIA B DEBUG - Angiography findings count: {len(angio_findings)}"
-            )
-
-            if thrombus_present:
-                logger.info("CRITERIA B DEBUG - Thrombus found - adding to evidence")
-                evidence_sources.append(
-                    {
-                        "type": "angiography",
-                        "details": angio_findings,
-                    }
-                )
-            else:
-                logger.info("CRITERIA B DEBUG - No thrombus found")
-
-        # Determine if criteria are met
-        met = len(evidence_sources) >= self.config.required_ischemia_criteria
-
-        # FINAL CRITERIA B LOGGING
-        logger.info(
-            f"CRITERIA B DEBUG - Total evidence sources found: {len(evidence_sources)}"
-        )
-        logger.info(
-            f"CRITERIA B DEBUG - Required ischemia criteria: {self.config.required_ischemia_criteria}"
-        )
-        logger.info(
-            f"CRITERIA B DEBUG - Evidence source types: {[src['type'] for src in evidence_sources]}"
-        )
-        logger.info(f"CRITERIA B DEBUG - Criteria B met: {met}")
-
-        # Update result
-        result.update(
-            {
-                "met": met,
-                "details": {
-                    "evidence_sources": [
-                        {
-                            "type": src["type"],
-                            "count": src.get("count", 1),
-                        }
-                        for src in evidence_sources
-                    ],
-                    "required_sources": self.config.required_ischemia_criteria,
-                    "found_sources": len(evidence_sources),
-                },
-                "evidence": [
-                    {
-                        "type": "ischemia_evidence",
-                        "description": f"Found {len(evidence_sources)} source(s) of ischemia evidence",
-                        "significance": (
-                            "Meets ischemia criteria"
-                            if met
-                            else "Insufficient ischemia evidence"
-                        ),
-                        "details": {
-                            "sources": [src["type"] for src in evidence_sources],
-                            "required": self.config.required_ischemia_criteria,
-                        },
-                    }
-                ],
+        if ischemia_evidence_found:
+            return {
+                "met": True,
+                "details": f"Found {len(ischemia_evidence_found)} type(s) of ischemia evidence: {', '.join(ischemia_evidence_found)}.",
+                "evidence": ischemia_evidence_found,
             }
-        )
-
-        logger.info(f"CRITERIA B FINAL RESULT: met={result['met']}")
-        return result
+        else:
+            return {"met": False, "details": "No clinical evidence of myocardial ischemia found."}

@@ -126,86 +126,92 @@ class ECGEvidenceExtractor(BaseEvidenceCollector):
         Returns:
             Dictionary containing ECG evidence
         """
+        log_prefix = f"[{patient_id}][{hadm_id}] [ECG_EXTRACTOR]"
+
         evidence = self._get_evidence_base()
         evidence["ecg_findings"] = []
         evidence["metadata"] = {"extraction_mode": "none"}
 
         # Get clinical notes for the admission
+        logger.info(f"{log_prefix} Fetching clinical notes for ECG evidence.")
         notes = self.notes_data_loader.get_patient_notes(patient_id, hadm_id)
 
         if notes.empty:
+            logger.warning(f"{log_prefix} No clinical notes found for patient.")
             return evidence
 
         # Filter for ECG notes
         ecg_notes = notes[notes["note_type"] == "ECG"]
+        logger.info(f"{log_prefix} Found {len(ecg_notes)} ECG reports out of {len(notes)} total notes.")
 
         # Limit number of notes if configured
         if self.max_notes and len(ecg_notes) > self.max_notes:
+            logger.info(f"{log_prefix} Limiting ECG notes from {len(ecg_notes)} to {self.max_notes}.")
             ecg_notes = ecg_notes.head(self.max_notes)
 
         if ecg_notes.empty:
+            logger.warning(f"{log_prefix} No ECG reports found.")
             evidence["metadata"]["extraction_mode"] = "none_no_notes"
             return evidence
 
+        logger.info(f"{log_prefix} Processing {len(ecg_notes)} ECG reports.")
+
         # LLM-first with regex fallback
-        logger.info(
-            f"[{hadm_id}] ECG EXTRACTION - Method selection: LLM available={self.llm_client and self.llm_client.enabled}"
-        )
+        try_llm = self.llm_client and self.llm_client.enabled
+        logger.info(f"{log_prefix} Method selection: LLM available={try_llm}")
 
         extracted_with_llm = False
-        if self.llm_client and self.llm_client.enabled:
+        if try_llm:
             try:
-                logger.info(
-                    f"[{hadm_id}] ECG EXTRACTION - Attempting LLM extraction..."
-                )
+                logger.info(f"{log_prefix} Attempting LLM extraction...")
                 llm_findings = self._extract_with_llm(ecg_notes)
                 # Post-process and validate LLM findings
                 ecg_findings = self._post_process_llm_findings(llm_findings)
                 evidence["metadata"]["extraction_mode"] = "llm_validated"
                 extracted_with_llm = True
                 logger.info(
-                    f"[{hadm_id}] ECG EXTRACTION - LLM extraction successful: {len(ecg_findings)} findings"
+                    f"{log_prefix} LLM extraction successful: {len(ecg_findings)} findings"
                 )
 
                 # Log detailed LLM results
-                logger.info(f"[{hadm_id}] LLM ECG RESULTS:")
-                logger.info(
-                    f"[{hadm_id}]   Raw LLM findings: {len(llm_findings)} items"
+                logger.debug(f"{log_prefix} LLM ECG Results:")
+                logger.debug(
+                    f"{log_prefix}   Raw LLM findings: {len(llm_findings)} items"
                 )
-                logger.info(
-                    f"[{hadm_id}]   Post-processed findings: {len(ecg_findings)} items"
+                logger.debug(
+                    f"{log_prefix}   Post-processed findings: {len(ecg_findings)} items"
                 )
 
                 if ecg_findings:
                     mi_related_count = sum(
                         1 for f in ecg_findings if f.get("mi_related", False)
                     )
-                    logger.info(
-                        f"[{hadm_id}]   MI-related ECG findings: {mi_related_count}/{len(ecg_findings)}"
+                    logger.debug(
+                        f"{log_prefix}   MI-related ECG findings: {mi_related_count}/{len(ecg_findings)}"
                     )
 
                     for i, finding in enumerate(ecg_findings[:3], 1):  # Log first 3
-                        logger.info(
-                            f"[{hadm_id}]     {i}. {finding.get('finding', 'unknown')}"
+                        logger.debug(
+                            f"{log_prefix}     {i}. {finding.get('finding', 'unknown')}"
                         )
-                        logger.info(
-                            f"[{hadm_id}]        Leads: {finding.get('leads', 'N/A')}"
+                        logger.debug(
+                            f"{log_prefix}        Leads: {finding.get('leads', 'N/A')}"
                         )
-                        logger.info(
-                            f"[{hadm_id}]        MI-related: {finding.get('mi_related', 'N/A')}"
+                        logger.debug(
+                            f"{log_prefix}        MI-related: {finding.get('mi_related', 'N/A')}"
                         )
-                        logger.info(
-                            f"[{hadm_id}]        Is new: {finding.get('is_new', 'N/A')}"
+                        logger.debug(
+                            f"{log_prefix}        Is new: {finding.get('is_new', 'N/A')}"
                         )
-                        logger.info(
-                            f"[{hadm_id}]        Confidence: {finding.get('confidence', 'N/A')}"
+                        logger.debug(
+                            f"{log_prefix}        Confidence: {finding.get('confidence', 'N/A')}"
                         )
                 else:
-                    logger.info(f"[{hadm_id}]   LLM extracted no ECG findings")
+                    logger.debug(f"{log_prefix}   LLM extracted no ECG findings")
             except Exception as e:
                 # Fallback to regex if LLM fails
                 logger.warning(
-                    f"[{hadm_id}] ECG EXTRACTION - LLM extraction failed: {str(e)}, falling back to regex"
+                    f"{log_prefix} LLM extraction failed: {str(e)}, falling back to regex"
                 )
 
         # Fallback to regex if LLM is not used or fails
@@ -213,10 +219,10 @@ class ECGEvidenceExtractor(BaseEvidenceCollector):
             evidence["metadata"]["extraction_mode"] = (
                 "regex_fallback" if self.llm_client else "regex"
             )
-            logger.info(f"[{hadm_id}] ECG EXTRACTION - Using regex extraction")
+            logger.info(f"{log_prefix} Using regex extraction")
             ecg_findings = self._extract_findings_regex(ecg_notes)
             logger.info(
-                f"[{hadm_id}] ECG EXTRACTION - Regex extraction complete: {len(ecg_findings)} findings"
+                f"{log_prefix} Regex extraction complete: {len(ecg_findings)} findings"
             )
 
         # Ensure every ECG finding dictionary has the 'mi_related' key
@@ -226,21 +232,21 @@ class ECGEvidenceExtractor(BaseEvidenceCollector):
         # Log detailed ECG evidence found
         mi_related_findings = [f for f in ecg_findings if f.get("mi_related", False)]
         if mi_related_findings:
-            logger.info(f"[{hadm_id}] ECG EVIDENCE FOUND (MI-related):")
+            logger.info(f"{log_prefix} MI-related ECG evidence found:")
             for i, finding in enumerate(
                 mi_related_findings[:5], 1
             ):  # Log first 5 MI-related findings
                 logger.info(
-                    f"[{hadm_id}]   {i}. {finding.get('finding', 'unknown')} in {finding.get('leads', 'unknown leads')}"
+                    f"{log_prefix}   {i}. {finding.get('finding', 'unknown')} in {finding.get('leads', 'unknown leads')}"
                 )
-                logger.info(
-                    f"[{hadm_id}]      Confidence: {finding.get('confidence', 'N/A')}"
+                logger.debug(
+                    f"{log_prefix}      Confidence: {finding.get('confidence', 'N/A')}"
                 )
-                logger.info(
-                    f"[{hadm_id}]      Context: {finding.get('context', 'N/A')[:100]}..."
+                logger.debug(
+                    f"{log_prefix}      Context: {finding.get('context', 'N/A')[:100]}..."
                 )
         else:
-            logger.info(f"[{hadm_id}] ECG EVIDENCE - No MI-related findings detected")
+            logger.info(f"{log_prefix} No MI-related ECG findings detected")
 
         evidence.update(
             {

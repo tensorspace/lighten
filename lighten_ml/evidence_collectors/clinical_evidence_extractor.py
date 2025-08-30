@@ -204,20 +204,26 @@ class ClinicalEvidenceExtractor(BaseEvidenceCollector):
         Returns:
             Dictionary containing clinical evidence
         """
+        log_prefix = f"[{patient_id}][{hadm_id}] [CLINICAL_EXTRACTOR]"
         evidence = self._get_evidence_base()
         evidence["symptoms"] = []
         evidence["diagnoses"] = []
         evidence["metadata"] = {"extraction_mode": "none"}
 
         # Get clinical notes for the admission
+        logger.info(f"{log_prefix} Fetching clinical notes.")
         notes = self.notes_data_loader.get_patient_notes(patient_id, hadm_id)
 
         # Limit number of notes if configured
         if self.max_notes and len(notes) > self.max_notes:
+            logger.info(f"{log_prefix} Limiting notes from {len(notes)} to {self.max_notes}.")
             notes = notes.head(self.max_notes)
 
         if notes.empty:
+            logger.warning(f"{log_prefix} No clinical notes found.")
             return evidence
+
+        logger.info(f"{log_prefix} Processing {len(notes)} clinical notes.")
 
         # If LLM client is available, use it for extraction
         try_llm = (
@@ -226,77 +232,70 @@ class ClinicalEvidenceExtractor(BaseEvidenceCollector):
             and self.llm_client.enabled
         )
 
-        logger.info(
-            f"[{hadm_id}] CLINICAL EXTRACTION - Method selection: LLM available={try_llm}"
-        )
+        logger.info(f"{log_prefix} Method selection: LLM available={try_llm}")
 
         if try_llm:
             try:
-                logger.info(
-                    f"[{hadm_id}] CLINICAL EXTRACTION - Attempting LLM extraction..."
-                )
+                logger.info(f"{log_prefix} Attempting LLM extraction...")
                 symptoms, diagnoses = self._extract_with_llm(notes)
                 mode = "llm"
                 logger.info(
-                    f"[{hadm_id}] CLINICAL EXTRACTION - LLM extraction successful: {len(symptoms)} symptoms, {len(diagnoses)} diagnoses"
+                    f"{log_prefix} LLM extraction successful: {len(symptoms)} symptoms, {len(diagnoses)} diagnoses"
                 )
 
                 # Log detailed LLM results
-                logger.info(f"[{hadm_id}] LLM CLINICAL RESULTS:")
                 if symptoms:
-                    logger.info(f"[{hadm_id}]   LLM Symptoms extracted:")
+                    logger.debug(f"{log_prefix} LLM Symptoms extracted:")
                     for i, symptom in enumerate(symptoms[:3], 1):  # Log first 3
-                        logger.info(
-                            f"[{hadm_id}]     {i}. {symptom.get('symptom', 'unknown')} (onset: {symptom.get('onset_time', 'N/A')})"
+                        logger.debug(
+                            f"{log_prefix}   {i}. {symptom.get('symptom', 'unknown')} (onset: {symptom.get('onset_time', 'N/A')})"
                         )
-                        logger.info(
-                            f"[{hadm_id}]        MI-related: {symptom.get('mi_related', 'N/A')}"
+                        logger.debug(
+                            f"{log_prefix}      MI-related: {symptom.get('mi_related', 'N/A')}"
                         )
-                        logger.info(
-                            f"[{hadm_id}]        Context snippet: {symptom.get('context', 'N/A')[:80]}..."
+                        logger.debug(
+                            f"{log_prefix}      Context snippet: {symptom.get('context', 'N/A')[:80]}..."
                         )
                 else:
-                    logger.info(f"[{hadm_id}]   LLM extracted no symptoms")
+                    logger.debug(f"{log_prefix} LLM extracted no symptoms")
 
                 if diagnoses:
-                    logger.info(f"[{hadm_id}]   LLM Diagnoses extracted:")
+                    logger.debug(f"{log_prefix} LLM Diagnoses extracted:")
                     for i, diagnosis in enumerate(diagnoses[:3], 1):  # Log first 3
-                        logger.info(
-                            f"[{hadm_id}]     {i}. {diagnosis.get('diagnosis', 'unknown')} (date: {diagnosis.get('diagnosis_date', 'N/A')})"
+                        logger.debug(
+                            f"{log_prefix}   {i}. {diagnosis.get('diagnosis', 'unknown')} (date: {diagnosis.get('diagnosis_date', 'N/A')})"
                         )
                 else:
-                    logger.info(f"[{hadm_id}]   LLM extracted no diagnoses")
+                    logger.debug(f"{log_prefix} LLM extracted no diagnoses")
             except Exception as e:
                 logger.warning(
-                    f"[{hadm_id}] CLINICAL EXTRACTION - LLM extraction failed: {str(e)}, falling back to regex"
+                    f"{log_prefix} LLM extraction failed: {str(e)}, falling back to regex"
                 )
                 symptoms, diagnoses = self._extract_with_regex(notes)
                 mode = "regex_fallback"
                 logger.info(
-                    f"[{hadm_id}] CLINICAL EXTRACTION - Regex fallback successful: {len(symptoms)} symptoms, {len(diagnoses)} diagnoses"
+                    f"{log_prefix} Regex fallback successful: {len(symptoms)} symptoms, {len(diagnoses)} diagnoses"
                 )
         else:
-            logger.info(
-                f"[{hadm_id}] CLINICAL EXTRACTION - Using regex extraction (LLM not available)"
-            )
+            logger.info(f"{log_prefix} Using regex extraction (LLM not available)")
             symptoms, diagnoses = self._extract_with_regex(notes)
             mode = "regex"
             logger.info(
-                f"[{hadm_id}] CLINICAL EXTRACTION - Regex extraction complete: {len(symptoms)} symptoms, {len(diagnoses)} diagnoses"
+                f"{log_prefix} Regex extraction complete: {len(symptoms)} symptoms, {len(diagnoses)} diagnoses"
             )
 
         # Log detailed evidence found
         if symptoms:
-            logger.info(f"[{hadm_id}] CLINICAL EVIDENCE FOUND:")
+            logger.info(f"{log_prefix} Clinical evidence found:")
             for i, symptom in enumerate(symptoms[:5], 1):  # Log first 5 symptoms
                 logger.info(
-                    f"[{hadm_id}]   {i}. {symptom.get('symptom', 'unknown')} (onset: {symptom.get('onset_time', 'N/A')})"
+                    f"{log_prefix}   {i}. {symptom.get('symptom', 'unknown')} (onset: {symptom.get('onset_time', 'N/A')})"
                 )
-                logger.info(
-                    f"[{hadm_id}]      Context: {symptom.get('context', 'N/A')[:100]}..."
+                logger.debug(
+                    f"{log_prefix}      Context: {symptom.get('context', 'N/A')[:100]}..."
                 )
         else:
-            logger.info(f"[{hadm_id}] CLINICAL EVIDENCE - No symptoms found")
+            logger.info(f"{log_prefix} No clinical symptoms found.")
 
         evidence.update(
             {

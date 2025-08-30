@@ -306,76 +306,79 @@ class LabDataLoader(BaseDataLoader):
             self._itemid_to_label_map = None
 
     def get_lab_tests_by_itemids(
-        self, patient_id: str, hadm_id: str, itemids: List[int]
+        self, patient_id: str, itemids: List[int], hadm_id: Optional[str] = None
     ) -> pd.DataFrame:
-        """Get specific lab test results using itemids directly.
+        """Get specific lab test results for a patient using itemids.
 
         Args:
-            patient_id: The ID of the patient
-            hadm_id: The ID of the hospital admission
-            itemids: List of itemids to search for
+            patient_id: The ID of the patient.
+            itemids: List of itemids to search for.
+            hadm_id: Optional hospital admission ID to filter by.
 
         Returns:
-            DataFrame containing the requested test results with mapped labels
+            DataFrame containing the requested test results.
         """
         if self.data is None:
             self.load_data()
 
-        logger.info(f"[{hadm_id}] Searching for tests using itemids: {itemids}")
+        log_prefix = f"[{patient_id}]"
+        if hadm_id:
+            log_prefix += f"[{hadm_id}]"
+        log_prefix += " [LAB_LOADER]"
 
-        # Get tests using itemid-based search
-        tests = self.data[
-            (self.data["subject_id"] == patient_id)
-            & (self.data["hadm_id"] == hadm_id)
-            & (self.data["itemid"].isin(itemids))
+        logger.info(f"{log_prefix} Searching for tests with itemids: {itemids}")
+
+        # Filter by patient and itemids first
+        patient_data = self.data[
+            (self.data["subject_id"] == patient_id) & (self.data["itemid"].isin(itemids))
         ].copy()
 
-        logger.info(
-            f"[{hadm_id}] Found {len(tests)} test records for itemids: {itemids}"
-        )
+        # Optionally filter by admission
+        if hadm_id:
+            tests = patient_data[patient_data["hadm_id"] == hadm_id].copy()
+        else:
+            tests = patient_data
+
+        logger.info(f"{log_prefix} Found {len(tests)} records for itemids: {itemids}")
 
         if not tests.empty:
-            # Add mapped label information if available
-            if self._itemid_to_label_map:
-                for idx, test in tests.iterrows():
-                    itemid = test.get("itemid")
-                    if itemid in self._itemid_to_label_map:
-                        mapping = self._itemid_to_label_map[itemid]
-                        # Ensure we have the mapped label (in case merge didn't work)
-                        if pd.isna(test.get("label")) or test.get("label") == "":
-                            tests.at[idx, "label"] = mapping["label"]
-                        if pd.isna(test.get("fluid")) or test.get("fluid") == "":
-                            tests.at[idx, "fluid"] = mapping["fluid"]
-                        if pd.isna(test.get("category")) or test.get("category") == "":
-                            tests.at[idx, "category"] = mapping["category"]
-
-            # Log details about found tests with units and time information
-            for _, test in tests.iterrows():
-                itemid = test.get("itemid", "N/A")
-                label = test.get("label", "N/A")
-                fluid = test.get("fluid", "N/A")
-                value = test.get("valuenum", "N/A")
-                unit = test.get("valueuom", "N/A")
-                charttime = test.get("charttime", "N/A")
-                storetime = test.get("storetime", "N/A")
-                logger.info(
-                    f"[{hadm_id}] Test found: itemid={itemid}, "
-                    f"label='{label}', fluid='{fluid}', value={value} {unit}, "
-                    f"charttime={charttime}, storetime={storetime}"
-                )
-
             values = tests["valuenum"].dropna()
             if not values.empty:
-                logger.info(f"[{hadm_id}] Values found: {list(values)}")
-                logger.info(
-                    f"[{hadm_id}] Value range: min={values.min():.6f}, max={values.max():.6f}"
-                )
+                logger.debug(f"{log_prefix} Value range: min={values.min():.4f}, max={values.max():.4f}")
 
-        # Sort by charttime
+        # Sort by charttime for chronological order
         if not tests.empty and "charttime" in tests.columns:
             tests = tests.sort_values("charttime")
 
         return tests
+
+    def get_troponin_tests(self, patient_id: str, hadm_id: Optional[str] = None) -> pd.DataFrame:
+        """Get all Troponin T tests for a patient.
+
+        Args:
+            patient_id: The ID of the patient.
+            hadm_id: Optional hospital admission ID to filter by.
+
+        Returns:
+            DataFrame containing Troponin T test results.
+        """
+        # Per clinical guidelines, only Troponin T (itemid 51003) is used.
+        troponin_itemids = [51003]
+        return self.get_lab_tests_by_itemids(patient_id, troponin_itemids, hadm_id)
+
+    def get_patient_troponin_history(self, patient_id: str) -> pd.DataFrame:
+        """Get the complete Troponin T history for a patient across all admissions.
+
+        Args:
+            patient_id: The ID of the patient.
+
+        Returns:
+            DataFrame containing all Troponin T tests for the patient.
+        """
+        logger.info(f"[{patient_id}] [LAB_LOADER] Fetching complete troponin history...")
+        troponin_history = self.get_troponin_tests(patient_id, hadm_id=None)
+        logger.info(f"[{patient_id}] [LAB_LOADER] Found {len(troponin_history)} total troponin records.")
+        return troponin_history
 
     def get_lab_test_info(self, itemid: int) -> Optional[Dict[str, str]]:
         """Get label information for a specific itemid.
@@ -410,263 +413,6 @@ class LabDataLoader(BaseDataLoader):
                 matching_itemids.append(itemid)
 
         return matching_itemids
-
-    def get_troponin_tests(self, patient_id: str, hadm_id: str) -> pd.DataFrame:
-        """Get troponin test results using direct itemid mapping.
-
-        This method uses the simplified approach: direct itemid lookup with
-        label mapping from d_labitems.csv.
-
-        Args:
-            patient_id: The ID of the patient
-            hadm_id: The ID of the hospital admission
-
-        Returns:
-            DataFrame containing troponin test results with proper labels
-        """
-        logger.info(f"[{hadm_id}] Getting troponin tests using direct itemid mapping")
-
-        # Following clinical guideline: ONLY Troponin T for MI diagnosis
-        # Diagnostic threshold: >0.014 ng/mL (per clinical guideline)
-        troponin_itemids = [
-            51003
-        ]  # Troponin T ONLY - guideline specifies no Troponin I
-
-        # Use the simplified itemid-based approach
-        troponin_tests = self.get_lab_tests_by_itemids(
-            patient_id, hadm_id, troponin_itemids
-        )
-
-        if not troponin_tests.empty:
-            logger.info(
-                f"[{hadm_id}] Found {len(troponin_tests)} troponin tests using direct itemid mapping"
-            )
-
-            # Log troponin-specific analysis
-            values = troponin_tests["valuenum"].dropna()
-            if not values.empty:
-                logger.info(f"[{hadm_id}] Troponin diagnostic threshold: 0.014 ng/mL")
-                above_threshold = values[values > 0.014]
-                logger.info(
-                    f"[{hadm_id}] Values above threshold: {len(above_threshold)} out of {len(values)}"
-                )
-        else:
-            logger.warning(
-                f"[{hadm_id}] No troponin tests found using direct itemid mapping"
-            )
-
-        return troponin_tests
-
-    def _get_troponin_tests_fallback(
-        self, patient_id: str, hadm_id: str
-    ) -> pd.DataFrame:
-        """Fallback troponin test retrieval using hard-coded itemids.
-
-        Args:
-            patient_id: The ID of the patient
-            hadm_id: The ID of the hospital admission
-
-        Returns:
-            DataFrame containing troponin test results
-        """
-        if self.data is None:
-            self.load_data()
-
-        logger.info(f"[{hadm_id}] === TROPONIN DATA SEARCH DEBUG ===")
-        logger.info(
-            f"[{hadm_id}] Searching for patient_id='{patient_id}', hadm_id='{hadm_id}'"
-        )
-        logger.info(f"[{hadm_id}] Total lab records in dataset: {len(self.data)}")
-
-        # Following clinical guideline: ONLY Troponin T for MI diagnosis
-        # 51003: Troponin T - diagnostic threshold >0.014 ng/mL (per clinical guideline)
-        # Note: 52642 and 51002 are Troponin I - NOT used per guideline
-        troponin_itemids = [51003]  # Troponin T ONLY - guideline requirement
-        logger.info(f"[{hadm_id}] Searching for troponin itemids: {troponin_itemids}")
-
-        # Check what data exists for this patient/admission combination
-        patient_admission_data = self.data[
-            (self.data["subject_id"] == patient_id) & (self.data["hadm_id"] == hadm_id)
-        ]
-        logger.info(
-            f"[{hadm_id}] Lab records for this patient/admission: {len(patient_admission_data)}"
-        )
-
-        if not patient_admission_data.empty:
-            unique_itemids = patient_admission_data["itemid"].unique()
-            logger.info(
-                f"[{hadm_id}] Available itemids for this admission: {list(unique_itemids)[:20]}..."
-            )  # Show first 20
-
-            # Check if any troponin itemids are present
-            troponin_itemids_found = [
-                itemid for itemid in troponin_itemids if itemid in unique_itemids
-            ]
-            logger.info(
-                f"[{hadm_id}] Troponin itemids found in data: {troponin_itemids_found}"
-            )
-
-            # Also check for labels (in case merge worked)
-            unique_labels = patient_admission_data["label"].dropna().unique()
-            troponin_labels = [
-                label for label in unique_labels if "troponin" in str(label).lower()
-            ]
-            logger.info(f"[{hadm_id}] Troponin-related labels found: {troponin_labels}")
-        else:
-            logger.warning(
-                f"[{hadm_id}] No lab data found for patient_id='{patient_id}', hadm_id='{hadm_id}'"
-            )
-            logger.info(
-                f"[{hadm_id}] Sample patient_ids in dataset: {list(self.data['subject_id'].unique())[:5]}"
-            )
-            logger.info(
-                f"[{hadm_id}] Sample hadm_ids in dataset: {list(self.data['hadm_id'].unique())[:5]}"
-            )
-
-        # Get troponin tests using itemid-based search (primary method)
-        troponin_tests = self.data[
-            (self.data["subject_id"] == patient_id)
-            & (self.data["hadm_id"] == hadm_id)
-            & (self.data["itemid"].isin(troponin_itemids))
-        ].copy()
-
-        # If no results with itemid, try label-based search as fallback
-        if troponin_tests.empty:
-            logger.info(
-                f"[{hadm_id}] No troponin tests found by itemid, trying label-based search..."
-            )
-            troponin_tests = self.data[
-                (self.data["subject_id"] == patient_id)
-                & (self.data["hadm_id"] == hadm_id)
-                & (self.data["label"].str.contains("troponin", case=False, na=False))
-            ].copy()
-            if not troponin_tests.empty:
-                logger.info(
-                    f"[{hadm_id}] Found troponin tests using label-based search"
-                )
-
-        logger.info(
-            f"[{hadm_id}] Final troponin test records found: {len(troponin_tests)}"
-        )
-
-        if not troponin_tests.empty:
-            # Log details about found tests
-            for _, test in troponin_tests.iterrows():
-                logger.info(
-                    f"[{hadm_id}] Troponin test found: itemid={test.get('itemid', 'N/A')}, "
-                    f"label='{test.get('label', 'N/A')}', value={test.get('valuenum', 'N/A')}"
-                )
-
-            values = troponin_tests["valuenum"].dropna()
-            if not values.empty:
-                logger.info(f"[{hadm_id}] Troponin values found: {list(values)}")
-                logger.info(
-                    f"[{hadm_id}] Troponin value range: min={values.min():.6f}, max={values.max():.6f}"
-                )
-                logger.info(f"[{hadm_id}] Diagnostic threshold: 0.014 ng/mL")
-                above_threshold = values[values > 0.014]
-                logger.info(
-                    f"[{hadm_id}] Values above threshold: {len(above_threshold)} out of {len(values)}"
-                )
-            else:
-                logger.warning(
-                    f"[{hadm_id}] Troponin tests found but no numeric values available"
-                )
-
-        # Sort by charttime
-        if not troponin_tests.empty and "charttime" in troponin_tests.columns:
-            troponin_tests = troponin_tests.sort_values("charttime")
-
-        return troponin_tests
-
-    # Legacy method for backward compatibility
-    def get_lab_tests_by_type(
-        self, patient_id: str, hadm_id: str, test_type: str
-    ) -> pd.DataFrame:
-        """Legacy method - now uses direct itemid search with label mapping.
-
-        Attempts to find itemids for the requested test type and uses direct lookup.
-        """
-        logger.warning(
-            f"get_lab_tests_by_type is deprecated. Use get_lab_tests_by_itemids or search_itemids_by_label instead."
-        )
-
-        # Search for itemids that match the test type
-        matching_itemids = self.search_itemids_by_label(test_type)
-        if matching_itemids:
-            logger.info(f"Found matching itemids for '{test_type}': {matching_itemids}")
-            return self.get_lab_tests_by_itemids(patient_id, hadm_id, matching_itemids)
-
-        # Fallback to label-based search
-        logger.info(f"No itemids found for '{test_type}', using label search")
-        return self.get_lab_tests_by_name(patient_id, hadm_id, test_type)
-
-    def get_intelligent_categorization_summary(self) -> Dict[str, Any]:
-        """Get a summary of the intelligent lab test categorization.
-
-        Returns:
-            Dictionary containing categorization statistics and details
-        """
-        if self._categorizer is None:
-            return {"status": "not_initialized", "categories": 0, "total_tests": 0}
-
-        return self._categorizer.get_categorization_summary()
-
-    def search_lab_tests_by_criteria(
-        self,
-        patient_id: str,
-        hadm_id: str,
-        test_name: Optional[str] = None,
-        fluid_type: Optional[str] = None,
-        category_filter: Optional[str] = None,
-    ) -> pd.DataFrame:
-        """Advanced search for lab tests with multiple criteria.
-
-        Args:
-            patient_id: The ID of the patient
-            hadm_id: The ID of the hospital admission
-            test_name: Partial test name to search for
-            fluid_type: Specific fluid type (serum, plasma, urine, etc.)
-            category_filter: Category filter from intelligent categorization
-
-        Returns:
-            DataFrame containing matching test results
-        """
-        if self.data is None:
-            self.load_data()
-
-        logger.info(
-            f"[{hadm_id}] Advanced lab test search: name='{test_name}', fluid='{fluid_type}', category='{category_filter}'"
-        )
-
-        # Start with patient/admission filter
-        tests = self.data[
-            (self.data["subject_id"] == patient_id) & (self.data["hadm_id"] == hadm_id)
-        ].copy()
-
-        # Apply test name filter
-        if test_name:
-            tests = tests[tests["label"].str.contains(test_name, case=False, na=False)]
-
-        # Apply fluid type filter
-        if fluid_type:
-            tests = tests[tests["fluid"].str.contains(fluid_type, case=False, na=False)]
-
-        # Apply category filter using intelligent categorization
-        if category_filter and self._categorizer:
-            category_itemids = self._categorizer.get_itemids_for_category(
-                category_filter
-            )
-            if category_itemids:
-                tests = tests[tests["itemid"].isin(category_itemids)]
-
-        logger.info(f"[{hadm_id}] Advanced search found {len(tests)} matching tests")
-
-        # Sort by charttime
-        if not tests.empty and "charttime" in tests.columns:
-            tests = tests.sort_values("charttime")
-
-        return tests
 
     def get_lab_tests_by_name(
         self, patient_id: str, hadm_id: str, test_name: str
@@ -869,89 +615,13 @@ class LabDataLoader(BaseDataLoader):
             DataFrame with all troponin tests for the patient, sorted chronologically
         """
         logger.info(
-            f"[TROPONIN_HISTORY] {patient_id} - Getting complete troponin history across all admissions"
+            f"[{patient_id}] [LAB_LOADER] Fetching complete troponin history..."
         )
-        logger.debug(
-            f"[DEBUG] {patient_id} - Starting patient-level troponin data collection"
-        )
-
-        if self.data is None:
-            logger.debug(f"[DEBUG] {patient_id} - Lab data not loaded, loading now")
-            self.load_data()
-
-        # Get all lab data for this patient across all admissions
-        logger.debug(f"[DEBUG] {patient_id} - Filtering lab data for patient")
-        patient_data = self.data[self.data["subject_id"] == patient_id]
-
-        if patient_data.empty:
-            logger.warning(f"[WARNING] {patient_id} - No lab data found for patient")
-            logger.debug(
-                f"[DEBUG] {patient_id} - Available patient IDs sample: {self.data['subject_id'].unique()[:5].tolist()}"
-            )
-            return pd.DataFrame()
-
-        logger.debug(
-            f"[DEBUG] {patient_id} - Found {len(patient_data)} total lab records"
-        )
-        logger.debug(
-            f"[DEBUG] {patient_id} - Lab records span {patient_data['hadm_id'].nunique()} admissions"
-        )
-
-        # Filter for troponin tests using itemid 51003 (Troponin T)
-        troponin_itemids = [51003]  # Based on clinical guideline requirement
-        logger.debug(
-            f"[DEBUG] {patient_id} - Filtering for troponin itemids: {troponin_itemids}"
-        )
-        troponin_data = patient_data[patient_data["itemid"].isin(troponin_itemids)]
-
-        if troponin_data.empty:
-            logger.info(
-                f"[TROPONIN_RESULT] {patient_id} - No troponin tests found across all admissions"
-            )
-            logger.debug(
-                f"[DEBUG] {patient_id} - Available itemids in patient data: {patient_data['itemid'].unique()[:10].tolist()}"
-            )
-            return pd.DataFrame()
-
-        # Sort chronologically by charttime
-        logger.debug(f"[DEBUG] {patient_id} - Sorting troponin data chronologically")
-        troponin_data = troponin_data.sort_values("charttime")
-
-        # Generate comprehensive statistics
-        unique_admissions = troponin_data["hadm_id"].nunique()
-        date_range_start = troponin_data["charttime"].min()
-        date_range_end = troponin_data["charttime"].max()
-        value_range = (
-            troponin_data["valuenum"].describe()
-            if "valuenum" in troponin_data.columns
-            else None
-        )
-
+        troponin_history = self.get_troponin_tests(patient_id, hadm_id=None)
         logger.info(
-            f"[TROPONIN_RESULT] {patient_id} - Found {len(troponin_data)} troponin tests across {unique_admissions} admissions"
+            f"[{patient_id}] [LAB_LOADER] Found {len(troponin_history)} total troponin records."
         )
-        logger.info(
-            f"[TROPONIN_RESULT] {patient_id} - Date range: {date_range_start} to {date_range_end}"
-        )
-
-        if value_range is not None:
-            logger.debug(f"[DEBUG] {patient_id} - Troponin value statistics:")
-            logger.debug(
-                f"[DEBUG] {patient_id} -   Min: {value_range['min']}, Max: {value_range['max']}"
-            )
-            logger.debug(
-                f"[DEBUG] {patient_id} -   Mean: {value_range['mean']:.4f}, Median: {value_range['50%']:.4f}"
-            )
-
-        # Log individual tests for debugging
-        if len(troponin_data) <= 10:  # Only log details for small datasets
-            for idx, row in troponin_data.iterrows():
-                logger.debug(
-                    f"[DEBUG] {patient_id} - Test: {row['hadm_id']} on {row['charttime']} = {row.get('valuenum', 'N/A')} {row.get('valueuom', '')}"
-                )
-
-        logger.debug(f"[DEBUG] {patient_id} - Troponin history collection completed")
-        return troponin_data
+        return troponin_history
 
     def get_patient_lab_history(
         self, patient_id: str, itemids: List[int]
@@ -966,51 +636,57 @@ class LabDataLoader(BaseDataLoader):
             DataFrame with all specified lab tests for the patient, sorted chronologically
         """
         logger.info(
-            f"[LAB_HISTORY] {patient_id} - Getting lab history for itemids: {itemids}"
+            f"[{patient_id}] [LAB_LOADER] Getting lab history for itemids: {itemids}"
         )
         logger.debug(
-            f"[DEBUG] {patient_id} - Starting patient-level lab data collection for {len(itemids)} item types"
+            f"[{patient_id}] [DEBUG] Starting patient-level lab data collection for {len(itemids)} item types"
         )
 
         if self.data is None:
-            logger.debug(f"[DEBUG] {patient_id} - Lab data not loaded, loading now")
+            logger.debug(f"[{patient_id}] [DEBUG] Lab data not loaded, loading now")
             self.load_data()
 
         # Get all lab tests for this patient
-        logger.debug(f"[DEBUG] {patient_id} - Filtering lab data for patient")
+        logger.debug(
+            f"[{patient_id}] [DEBUG] Filtering lab data for patient"
+        )
         patient_data = self.data[self.data["subject_id"] == patient_id]
 
         if patient_data.empty:
-            logger.warning(f"[WARNING] {patient_id} - No lab data found for patient")
+            logger.warning(
+                f"[{patient_id}] [WARNING] No lab data found for patient"
+            )
             logger.debug(
-                f"[DEBUG] {patient_id} - Available patient IDs sample: {self.data['subject_id'].unique()[:5].tolist()}"
+                f"[{patient_id}] [DEBUG] Available patient IDs sample: {self.data['subject_id'].unique()[:5].tolist()}"
             )
             return pd.DataFrame()
 
         logger.debug(
-            f"[DEBUG] {patient_id} - Found {len(patient_data)} total lab records"
+            f"[{patient_id}] [DEBUG] Found {len(patient_data)} total lab records"
         )
         logger.debug(
-            f"[DEBUG] {patient_id} - Available itemids in patient data: {sorted(patient_data['itemid'].unique())[:20]}"
+            f"[{patient_id}] [DEBUG] Available itemids in patient data: {sorted(patient_data['itemid'].unique())[:20]}"
         )
 
         # Filter for specified itemids
         logger.debug(
-            f"[DEBUG] {patient_id} - Filtering for requested itemids: {itemids}"
+            f"[{patient_id}] [DEBUG] Filtering for requested itemids: {itemids}"
         )
         lab_data = patient_data[patient_data["itemid"].isin(itemids)]
 
         if lab_data.empty:
             logger.info(
-                f"[LAB_RESULT] {patient_id} - No lab tests found for itemids {itemids}"
+                f"[{patient_id}] [LAB_RESULT] No lab tests found for itemids {itemids}"
             )
             logger.debug(
-                f"[DEBUG] {patient_id} - Requested itemids not found in patient data"
+                f"[{patient_id}] [DEBUG] Requested itemids not found in patient data"
             )
             return pd.DataFrame()
 
         # Sort chronologically by charttime
-        logger.debug(f"[DEBUG] {patient_id} - Sorting lab data chronologically")
+        logger.debug(
+            f"[{patient_id}] [DEBUG] Sorting lab data chronologically"
+        )
         lab_data = lab_data.sort_values("charttime")
 
         # Generate statistics by itemid
@@ -1019,18 +695,22 @@ class LabDataLoader(BaseDataLoader):
         date_range_end = lab_data["charttime"].max()
 
         logger.info(
-            f"[LAB_RESULT] {patient_id} - Found {len(lab_data)} lab tests across {unique_admissions} admissions"
+            f"[{patient_id}] [LAB_RESULT] Found {len(lab_data)} lab tests across {unique_admissions} admissions"
         )
         logger.info(
-            f"[LAB_RESULT] {patient_id} - Date range: {date_range_start} to {date_range_end}"
+            f"[{patient_id}] [LAB_RESULT] Date range: {date_range_start} to {date_range_end}"
         )
 
         # Log breakdown by itemid
         itemid_counts = lab_data["itemid"].value_counts()
         for itemid, count in itemid_counts.items():
-            logger.debug(f"[DEBUG] {patient_id} - ItemID {itemid}: {count} tests")
+            logger.debug(
+                f"[{patient_id}] [DEBUG] ItemID {itemid}: {count} tests"
+            )
 
-        logger.debug(f"[DEBUG] {patient_id} - Lab history collection completed")
+        logger.debug(
+            f"[{patient_id}] [DEBUG] Lab history collection completed"
+        )
         return lab_data
 
     def get_all_patient_ids(self) -> List[str]:

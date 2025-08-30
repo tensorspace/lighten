@@ -40,7 +40,7 @@ class PatientLevelClinicalPipeline:
         self.patient_history_loader = PatientHistoryLoader(discharge_notes_path)
 
         # Initialize evidence collectors
-        self.troponin_analyzer = TroponinAnalyzer()
+        self.troponin_analyzer = TroponinAnalyzer(self.lab_data_loader)
         self.clinical_extractor = ClinicalEvidenceExtractor()
         self.ecg_extractor = ECGEvidenceExtractor()
         self.imaging_extractor = ImagingEvidenceExtractor()
@@ -60,84 +60,76 @@ class PatientLevelClinicalPipeline:
         self.config = config or {}
 
     def process_patient(self, patient_id: str) -> Dict[str, Any]:
-        """Process a single patient's complete visit history for MI analysis.
-
-        Args:
-            patient_id: Patient subject_id
-
-        Returns:
-            Complete MI analysis results for the patient
-        """
-        logger.info(f"=== PROCESSING PATIENT {patient_id} ===")
+        """Process a single patient's complete visit history for MI analysis."""
+        logger.info(f"[PIPELINE_START] === PROCESSING PATIENT {patient_id} ===")
 
         # Get patient's complete visit history
         visit_history = self.patient_history_loader.get_patient_visit_history(patient_id)
         if not visit_history:
-            logger.warning(f"No visit history found for patient {patient_id}")
+            logger.warning(f"[{patient_id}] No visit history found. Skipping.")
             return self._create_empty_result(patient_id, "No visit history available")
 
         visit_summary = self.patient_history_loader.get_patient_visit_summary(patient_id)
-        logger.info(f"Patient {patient_id} has {visit_summary['total_visits']} visits from {visit_summary['date_range']['first_visit']} to {visit_summary['date_range']['last_visit']}")
+        logger.info(f"[{patient_id}] Found {visit_summary['total_visits']} visits from {visit_summary['date_range']['first_visit']} to {visit_summary['date_range']['last_visit']}")
 
         try:
             # Step 1: Collect and analyze patient's full troponin history for Criteria A
-            logger.info(f"[STEP 1/4] Collecting full troponin history for patient {patient_id}")
+            logger.info(f"[{patient_id}] [STEP 1/3] Collecting full troponin history...")
             troponin_evidence = self._collect_patient_troponin_history(patient_id, visit_history)
 
             # Step 2: Evaluate Criteria A (Troponin)
-            logger.info(f"[STEP 2/4] Evaluating Criteria A (Troponin) for patient {patient_id}")
+            logger.info(f"[{patient_id}] [STEP 2/3] Evaluating Criteria A (Troponin)...")
             criteria_a_result = self.rule_engine.evaluate_criteria_a(troponin_evidence)
 
             if not criteria_a_result["met"]:
-                logger.info("Criteria A not met. Skipping further analysis.")
+                logger.info(f"[{patient_id}] Criteria A: NOT MET. Skipping further analysis.")
                 mi_result = RuleResult(passed=False, details={'criteria_A': criteria_a_result["details"], 'criteria_B': {'met': False, 'reason': 'Criteria A not met'}})
-                return self._compile_patient_results(patient_id, visit_history, mi_result, None, {"troponin": troponin_evidence})
+                result = self._compile_patient_results(patient_id, visit_history, mi_result, None, {"troponin": troponin_evidence})
+                logger.info(f"[PIPELINE_END] === PATIENT {patient_id}: MI DIAGNOSIS: NEGATIVE (Criteria A not met) ===")
+                return result
 
-            logger.info("Criteria A met. Proceeding to collect clinical evidence for Criteria B.")
+            logger.info(f"[{patient_id}] Criteria A: MET. Proceeding to collect clinical evidence.")
 
-            # Step 3: Collect historical clinical evidence for Criteria B
-            logger.info(f"[STEP 3/4] Collecting historical clinical evidence for patient {patient_id}")
+            # Step 3: Collect clinical evidence, evaluate MI, and determine onset date
+            logger.info(f"[{patient_id}] [STEP 3/3] Collecting clinical evidence for Criteria B...")
             clinical_evidence = self._collect_historical_clinical_evidence(patient_id, visit_history)
 
-            # Combine all evidence for final evaluation
-            historical_evidence = {
-                "troponin": troponin_evidence,
-                **clinical_evidence
-            }
+            historical_evidence = {"troponin": troponin_evidence, **clinical_evidence}
 
-            # Step 4: Final MI Evaluation and Onset Date Resolution
-            logger.info(f"[STEP 4/4] Running final MI evaluation for patient {patient_id}")
+            logger.info(f"[{patient_id}] Running final MI evaluation...")
             mi_result = self.rule_engine.evaluate(historical_evidence)
 
             onset_date = None
             if mi_result.passed:
-                logger.info(f"Determining MI onset date for patient {patient_id}")
+                logger.info(f"[{patient_id}] MI diagnosis is POSITIVE. Determining onset date...")
                 onset_date = self._determine_historical_onset_date(patient_id, visit_history, historical_evidence)
-                logger.info(f"MI Onset Date for patient {patient_id}: {onset_date}")
+                logger.info(f"[{patient_id}] Determined MI Onset Date: {onset_date}")
+            else:
+                logger.info(f"[{patient_id}] MI diagnosis is NEGATIVE (Criteria B not met).")
 
             # Compile and return final results
             result = self._compile_patient_results(patient_id, visit_history, mi_result, onset_date, historical_evidence)
-            logger.info(f"Successfully completed analysis for patient {patient_id}")
+            logger.info(f"[PIPELINE_END] === PATIENT {patient_id}: MI DIAGNOSIS: {'POSITIVE' if mi_result.passed else 'NEGATIVE'} ===")
             return result
 
         except Exception as e:
-            logger.error(f"Error processing patient {patient_id}: {e}", exc_info=True)
+            logger.error(f"[{patient_id}] [ERROR] Pipeline failed for patient {patient_id}: {e}", exc_info=True)
             return self._create_empty_result(patient_id, f"Processing error: {str(e)}")
 
     def _collect_patient_troponin_history(self, patient_id: str, visit_history: List[Dict]) -> Dict[str, Any]:
         """Collect only the troponin history for a patient across all visits."""
-        logger.info(f"[{patient_id}] Collecting troponin history across {len(visit_history)} visits...")
         troponin_tests = []
         troponin_available = False
 
         for visit in visit_history:
             hadm_id = visit["hadm_id"]
+            logger.debug(f"[{patient_id}] Checking for troponins in visit {hadm_id}")
             visit_troponin = self._collect_visit_troponin(patient_id, hadm_id)
             if visit_troponin["troponin_available"]:
                 troponin_available = True
                 troponin_tests.extend(visit_troponin["troponin_tests"])
 
-        logger.info(f"[{patient_id}] Found {len(troponin_tests)} total troponin tests.")
+        logger.info(f"[{patient_id}] Found {len(troponin_tests)} total troponin tests across {len(visit_history)} visits.")
         return {
             "troponin_available": troponin_available,
             "troponin_tests": troponin_tests
@@ -145,7 +137,6 @@ class PatientLevelClinicalPipeline:
 
     def _collect_historical_clinical_evidence(self, patient_id: str, visit_history: List[Dict]) -> Dict[str, Any]:
         """Collect non-troponin clinical evidence across all patient visits."""
-        logger.info(f"[{patient_id}] Collecting clinical evidence across {len(visit_history)} visits...")
         clinical_evidence = {
             "clinical": {"symptoms": [], "diagnoses": []},
             "ecg": {"findings": []},
@@ -156,6 +147,7 @@ class PatientLevelClinicalPipeline:
         for visit in visit_history:
             hadm_id = visit["hadm_id"]
             text = visit["text"]
+            logger.debug(f"[{patient_id}] Extracting clinical evidence from visit {hadm_id}")
 
             # Collect clinical evidence
             visit_clinical = self._collect_visit_clinical_evidence(patient_id, hadm_id, text)
@@ -163,15 +155,15 @@ class PatientLevelClinicalPipeline:
             clinical_evidence["clinical"]["diagnoses"].extend(visit_clinical["diagnoses"])
 
             # Placeholder for other evidence collectors (ECG, imaging, etc.)
-            # ecg_findings = self.ecg_extractor.extract(text, hadm_id)
-            # clinical_evidence["ecg"]["findings"].extend(ecg_findings)
 
         symptom_count = len(clinical_evidence["clinical"]["symptoms"])
         diagnosis_count = len(clinical_evidence["clinical"]["diagnoses"])
-        logger.info(f"[{patient_id}] Found {symptom_count} symptoms and {diagnosis_count} diagnoses.")
+        logger.info(f"[{patient_id}] Found {symptom_count} total symptoms and {diagnosis_count} total diagnoses.")
         return clinical_evidence
 
-    def _collect_visit_troponin(self, patient_id: str, hadm_id: str) -> Dict[str, Any]:
+    def _collect_visit_troponin(
+        self, patient_id: str, hadm_id: str
+    ) -> Dict[str, Any]:
         """Collect troponin evidence for a specific visit."""
         logger.debug(
             f"[DEBUG] {patient_id} - Collecting troponin evidence for visit {hadm_id}"
@@ -182,136 +174,48 @@ class PatientLevelClinicalPipeline:
             logger.debug(
                 f"[DEBUG] {patient_id} - Querying troponin tests for admission {hadm_id}"
             )
-            troponin_tests = self.lab_data_loader.get_troponin_tests(
+            troponin_df = self.lab_data_loader.get_troponin_tests(
                 patient_id, hadm_id
-            )
-
-            if not troponin_tests.empty:
-                logger.debug(
-                    f"[DEBUG] {patient_id} - Found {len(troponin_tests)} troponin tests for visit {hadm_id}"
-                )
-
-                # Process troponin data using existing analyzer
-                logger.debug(
-                    f"[DEBUG] {patient_id} - Analyzing troponin data for visit {hadm_id}"
-                )
-                troponin_evidence = self.troponin_analyzer.analyze_troponin_data(
-                    patient_id, hadm_id, troponin_tests
-                )
-
-                logger.debug(
-                    f"[DEBUG] {patient_id} - Troponin analysis completed for visit {hadm_id}"
-                )
-                return troponin_evidence
-            else:
-                logger.debug(
-                    f"[DEBUG] {patient_id} - No troponin tests found for visit {hadm_id}"
-                )
-                return {"troponin_available": False, "troponin_tests": []}
-
+            )  # Limit to 1000 for performance
         except Exception as e:
             logger.error(
-                f"[ERROR] {patient_id} - Error collecting troponin for visit {hadm_id}: {e}"
+                f"[{patient_id}] Failed to get troponin tests for admission {hadm_id}: {e}"
             )
-            logger.debug(f"[DEBUG] {patient_id} - Exception details", exc_info=True)
+            return {"troponin_available": False, "troponin_tests": []}
+
+        if not troponin_df.empty:
+            logger.debug(
+                f"[{patient_id}] Found {len(troponin_df)} troponin results for admission {hadm_id}"
+            )
+            processed_troponins = self.troponin_analyzer.process_troponin_data(
+                troponin_df
+            )
+            return {
+                "troponin_available": True,
+                "troponin_tests": processed_troponins,
+            }
+        else:
             return {"troponin_available": False, "troponin_tests": []}
 
     def _collect_visit_clinical_evidence(
-        self, patient_id: str, hadm_id: str, clinical_text: str
+        self, patient_id: str, hadm_id: str, text: str
     ) -> Dict[str, Any]:
-        """Collect clinical evidence for a specific visit."""
-        logger.debug(
-            f"[DEBUG] {patient_id} - Collecting clinical evidence for visit {hadm_id}"
-        )
-
-        try:
-            # Log clinical text statistics
-            text_length = len(clinical_text) if clinical_text else 0
-            logger.debug(
-                f"[DEBUG] {patient_id} - Clinical text length for visit {hadm_id}: {text_length} characters"
-            )
-
-            if text_length == 0:
-                logger.warning(
-                    f"[WARNING] {patient_id} - Empty clinical text for visit {hadm_id}"
-                )
-                return {"symptoms": [], "diagnoses": []}
-
-            # Extract clinical evidence from this visit's notes
-            logger.debug(
-                f"[DEBUG] {patient_id} - Extracting clinical evidence from visit {hadm_id}"
-            )
-            clinical_evidence = self.clinical_extractor.extract_evidence(
-                patient_id, hadm_id, clinical_text
-            )
-
-            # Log extraction results
-            symptoms_count = len(clinical_evidence.get("symptoms", []))
-            diagnoses_count = len(clinical_evidence.get("diagnoses", []))
-            logger.debug(
-                f"[DEBUG] {patient_id} - Visit {hadm_id} extraction: {symptoms_count} symptoms, {diagnoses_count} diagnoses"
-            )
-
-            return clinical_evidence
-
-        except Exception as e:
-            logger.error(
-                f"[ERROR] {patient_id} - Error collecting clinical evidence for visit {hadm_id}: {e}"
-            )
-            logger.debug(f"[DEBUG] {patient_id} - Exception details", exc_info=True)
+        """Collect clinical evidence from a single discharge note."""
+        if not text:
+            logger.debug(f"[{patient_id}] No text provided for admission {hadm_id}")
             return {"symptoms": [], "diagnoses": []}
 
-    def _aggregate_evidence(self, evidence: Dict[str, Any]) -> Dict[str, Any]:
-        """Aggregate and deduplicate evidence across visits."""
-        logger.debug(f"[DEBUG] Starting evidence aggregation and deduplication")
-
-        # Sort troponin tests chronologically
-        troponin_count = len(evidence["troponin"]["troponin_tests"])
-        if evidence["troponin"]["troponin_tests"]:
+        try:
             logger.debug(
-                f"[DEBUG] Sorting {troponin_count} troponin tests chronologically"
+                f"[{patient_id}] Extracting clinical evidence from note for admission {hadm_id} ({len(text)} chars)"
             )
-            evidence["troponin"]["troponin_tests"].sort(
-                key=lambda x: x.get("timestamp", ""), reverse=False
+            clinical_evidence = self.clinical_extractor.extract(text, hadm_id)
+            return clinical_evidence
+        except Exception as e:
+            logger.error(
+                f"[{patient_id}] Failed to extract clinical evidence for admission {hadm_id}: {e}"
             )
-            logger.debug(f"[DEBUG] Troponin tests sorted successfully")
-
-        # Deduplicate symptoms (keep unique symptom-context combinations)
-        original_symptoms_count = len(evidence["clinical"]["symptoms"])
-        logger.debug(f"[DEBUG] Deduplicating {original_symptoms_count} symptoms")
-
-        unique_symptoms = []
-        seen_symptoms = set()
-        for symptom in evidence["clinical"]["symptoms"]:
-            symptom_key = f"{symptom.get('symptom', '')}-{symptom.get('context', '')}"
-            if symptom_key not in seen_symptoms:
-                unique_symptoms.append(symptom)
-                seen_symptoms.add(symptom_key)
-        evidence["clinical"]["symptoms"] = unique_symptoms
-
-        logger.debug(
-            f"[DEBUG] Symptoms after deduplication: {len(unique_symptoms)} (removed {original_symptoms_count - len(unique_symptoms)} duplicates)"
-        )
-
-        # Deduplicate diagnoses
-        original_diagnoses_count = len(evidence["clinical"]["diagnoses"])
-        logger.debug(f"[DEBUG] Deduplicating {original_diagnoses_count} diagnoses")
-
-        unique_diagnoses = []
-        seen_diagnoses = set()
-        for diagnosis in evidence["clinical"]["diagnoses"]:
-            diag_key = diagnosis.get("diagnosis", "")
-            if diag_key not in seen_diagnoses:
-                unique_diagnoses.append(diagnosis)
-                seen_diagnoses.add(diag_key)
-        evidence["clinical"]["diagnoses"] = unique_diagnoses
-
-        logger.debug(
-            f"[DEBUG] Diagnoses after deduplication: {len(unique_diagnoses)} (removed {original_diagnoses_count - len(unique_diagnoses)} duplicates)"
-        )
-        logger.debug(f"[DEBUG] Evidence aggregation completed successfully")
-
-        return evidence
+            return {"symptoms": [], "diagnoses": []}
 
     def _determine_historical_onset_date(
         self, patient_id: str, visit_history: List[Dict], evidence: Dict[str, Any]
@@ -400,18 +304,15 @@ class PatientLevelClinicalPipeline:
 
         return result
 
-    def _create_empty_result(self, patient_id: str, reason: str) -> Dict[str, Any]:
-        """Create empty result for patients with no data or errors."""
+    def _create_empty_result(self, patient_id: str, error_message: str) -> Dict[str, Any]:
+        """Create a standardized empty result for failed processing."""
         return {
-            patient_id: {
-                "Myocardial Infarction": [
-                    {
-                        "value": "N",
-                        "Myocardial Infarction Date": [{"value": None, "Symptoms": []}],
-                    }
-                ],
-                "_analysis_metadata": {"error": reason, "total_visits": 0},
-            }
+            "patient_id": patient_id,
+            "mi_diagnosis": "Error",
+            "details": {"error": error_message},
+            "mi_onset_date": None,
+            "evidence": {},
+            "metadata": {"processing_status": "Failed"},
         }
 
     def process_all_patients(self) -> Dict[str, Any]:

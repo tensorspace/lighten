@@ -148,6 +148,34 @@ class TestECGEvidenceExtractor(unittest.TestCase):
         self.assertEqual(len(processed), 1)
         self.assertTrue(processed[0]["is_new"])
 
+    def test_patient_centric_logging_in_regex_mode(self):
+        """Verify patient and admission IDs are in logs (Regex mode)."""
+        patient_id = "log_ecg_1"
+        hadm_id = "log_adm_ecg_1"
+        notes = pd.DataFrame({"text": ["ST elevation noted."]})
+
+        self.mock_notes_loader.get_patient_notes.return_value = notes
+        self.mock_llm_client.enabled = False
+
+        with self.assertLogs('lighten_ml.evidence_collectors.ecg_evidence_extractor', level='INFO') as cm:
+            self.extractor.collect_evidence(patient_id, hadm_id)
+            self.assertTrue(any(f"[{patient_id}][{hadm_id}]" in msg for msg in cm.output))
+
+    def test_patient_centric_logging_in_llm_mode(self):
+        """Verify patient and admission IDs are in logs (LLM mode)."""
+        patient_id = "log_ecg_2"
+        hadm_id = "log_adm_ecg_2"
+        notes = pd.DataFrame({"text": ["ST elevation noted."]})
+        llm_output = {"ecg_findings": []}
+
+        self.mock_notes_loader.get_patient_notes.return_value = notes
+        self.mock_llm_client.enabled = True
+        self.mock_llm_client.extract_json.return_value = llm_output
+
+        with self.assertLogs('lighten_ml.evidence_collectors.ecg_evidence_extractor', level='INFO') as cm:
+            self.extractor.collect_evidence(patient_id, hadm_id)
+            self.assertTrue(any(f"[{patient_id}][{hadm_id}]" in msg for msg in cm.output))
+
 
 if __name__ == "__main__":
     unittest.main()
