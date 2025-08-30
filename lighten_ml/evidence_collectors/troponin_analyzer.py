@@ -4,6 +4,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Tuple
 
+import pandas as pd
 from dateutil.parser import parse as date_parse
 
 from .base_evidence_collector import BaseEvidenceCollector
@@ -116,6 +117,20 @@ class TroponinAnalyzer(BaseEvidenceCollector):
                 else:
                     logger.warning(
                         f"No numeric value found in test record: {test.to_dict()}"
+                    )
+                    continue
+
+                # Critical: Skip NaN values - they cannot be used for clinical analysis
+                if (
+                    pd.isna(value)
+                    or not isinstance(value, (int, float))
+                    or value != value
+                ):  # NaN check
+                    logger.warning(
+                        f"[SKIP] TROPONIN TEST: Invalid value (NaN) detected - skipping test"
+                    )
+                    logger.warning(
+                        f"[DATA_QUALITY] Raw value from database: {test.get('valuenum', test.get('value', 'N/A'))}"
                     )
                     continue
 

@@ -22,6 +22,16 @@ def convert_troponin_units(value: float, unit: str) -> tuple[float, str]:
     """
     logger.info(f"[CONVERT] UNIT CONVERSION START: {value} {unit}")
 
+    # Critical: Validate input value - reject NaN values
+    if (
+        pd.isna(value) or not isinstance(value, (int, float)) or value != value
+    ):  # NaN check
+        logger.error(
+            f"[ERROR] UNIT CONVERSION: Invalid value (NaN) cannot be converted"
+        )
+        logger.error(f"[DATA_QUALITY] Received invalid value: {value}")
+        raise ValueError(f"Cannot convert NaN or invalid troponin value: {value}")
+
     if not unit or pd.isna(unit):
         logger.warning(
             f"[WARNING] UNIT CONVERSION: No unit provided for troponin value {value}, assuming ng/mL"
