@@ -3,7 +3,10 @@ from typing import Dict, List, Any, Optional, Tuple
 import numpy as np
 from datetime import datetime, timedelta
 from dateutil.parser import parse as date_parse
+import logging
 from .base_evidence_collector import BaseEvidenceCollector
+
+logger = logging.getLogger(__name__)
 
 class TroponinAnalyzer(BaseEvidenceCollector):
     """Analyzes troponin levels to detect myocardial infarction patterns."""
@@ -31,20 +34,26 @@ class TroponinAnalyzer(BaseEvidenceCollector):
         Returns:
             Dictionary containing troponin analysis results
         """
+        logger.info(f"[{hadm_id}] Starting troponin analysis for patient {patient_id}")
         evidence = self._get_evidence_base()
         
         # Get all troponin tests for the patient's admission
         troponin_tests = self.lab_data_loader.get_troponin_tests(patient_id, hadm_id)
+        logger.info(f"[{hadm_id}] Found {len(troponin_tests)} troponin test records")
         
         if troponin_tests.empty:
+            logger.warning(f"[{hadm_id}] No troponin tests found for patient {patient_id}")
             evidence['troponin_available'] = False
             return evidence
         
         # Process troponin values
         processed = self._process_troponin_tests(troponin_tests)
+        logger.info(f"[{hadm_id}] Processed troponin values: max={processed.get('max_value', 'N/A')}, count={len(processed.get('values', []))}")
         
         # Check for MI criteria
         criteria_met, criteria_details = self._check_mi_criteria(processed['values'])
+        logger.info(f"[{hadm_id}] *** TROPONIN CRITERIA RESULT: {'MET' if criteria_met else 'NOT MET'} ***")
+        logger.info(f"[{hadm_id}] Troponin criteria details: {criteria_details}")
         
         evidence.update({
             'troponin_available': True,

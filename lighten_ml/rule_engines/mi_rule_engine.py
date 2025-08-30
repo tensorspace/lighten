@@ -2,7 +2,10 @@
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Any
 from datetime import datetime
+import logging
 from .base_rule_engine import BaseRuleEngine, RuleResult
+
+logger = logging.getLogger(__name__)
 
 @dataclass
 class MIRuleEngineConfig:
@@ -159,6 +162,8 @@ class MIRuleEngine(BaseRuleEngine[MIRuleEngineConfig]):
         Returns:
             Dictionary with evaluation results
         """
+        logger.info("=== RULE ENGINE CRITERIA A (BIOMARKER) EVALUATION ===")
+        
         result = {
             'met': False,
             'confidence': 0.0,
@@ -166,7 +171,11 @@ class MIRuleEngine(BaseRuleEngine[MIRuleEngineConfig]):
             'evidence': []
         }
         
+        logger.info(f"Troponin evidence available: {troponin_evidence.get('troponin_available', False)}")
+        logger.info(f"Troponin evidence keys: {list(troponin_evidence.keys())}")
+        
         if not troponin_evidence or not troponin_evidence.get('troponin_available', False):
+            logger.warning("CRITERIA A FAILED: No troponin data available")
             result['details'] = {'reason': 'No troponin data available'}
             result['evidence'].append({
                 'type': 'troponin',

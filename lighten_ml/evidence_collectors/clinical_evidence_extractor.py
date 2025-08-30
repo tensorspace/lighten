@@ -2,8 +2,11 @@
 from typing import Dict, List, Any, Set, Optional, Tuple
 import re
 from datetime import datetime
+import logging
 from .base_evidence_collector import BaseEvidenceCollector
 from ..llm_client import LightenLLMClient
+
+logger = logging.getLogger(__name__)
 
 class ClinicalEvidenceExtractor(BaseEvidenceCollector):
     """Extracts clinical evidence of myocardial infarction from notes."""

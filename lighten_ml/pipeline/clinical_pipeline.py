@@ -149,9 +149,11 @@ class ClinicalPipeline:
             logger.debug(f"[{hadm_id}] Evidence collection complete.")
 
             # 2. Apply rule engine to evaluate MI
-            logger.debug(f"[{hadm_id}] Evaluating MI rules...")
+            logger.info(f"[{hadm_id}] Starting MI rule engine evaluation...")
             rule_result = self.rule_engine.evaluate(evidence)
-            logger.info(f"[{hadm_id}] MI Rule Engine Result: {'PASSED' if rule_result.passed else 'FAILED'}. Rationale: {rule_result.rationale}")
+            logger.info(f"[{hadm_id}] *** MI RULE ENGINE RESULT: {'PASSED' if rule_result.passed else 'FAILED'} ***")
+            logger.info(f"[{hadm_id}] Rule Engine Rationale: {rule_result.rationale}")
+            logger.info(f"[{hadm_id}] Rule Engine Confidence: {rule_result.confidence:.2f}")
             
             # 3. Determine MI Onset Date
             onset_date_result = {}
@@ -399,8 +401,8 @@ class ClinicalPipeline:
                         "Symptoms": symptoms_list
                     }
                 ]
-            elif mi_value == 'Y':
-                # MI detected but no onset date - still include the Date structure but with null/empty
+            else:
+                # For both Y (no date) and N cases, include the Date structure with null/empty values
                 mi_entry["Myocardial Infarction Date"] = [
                     {
                         "value": None,
@@ -408,8 +410,14 @@ class ClinicalPipeline:
                     }
                 ]
             
-            # Add the MI entry to the patient's array
-            requirement_output[patient_id]["Myocardial Infarction"].append(mi_entry)
+            # Only add one entry per patient - avoid duplicates
+            if not requirement_output[patient_id]["Myocardial Infarction"]:
+                requirement_output[patient_id]["Myocardial Infarction"].append(mi_entry)
+            else:
+                # If patient already has an entry, only replace if this is a positive case
+                existing_entry = requirement_output[patient_id]["Myocardial Infarction"][0]
+                if mi_value == 'Y' and existing_entry["value"] == 'N':
+                    requirement_output[patient_id]["Myocardial Infarction"] = [mi_entry]
 
         requirement_json_path = os.path.join(self.output_dir, 'requirement_compliant_output.json')
         with open(requirement_json_path, 'w') as f:

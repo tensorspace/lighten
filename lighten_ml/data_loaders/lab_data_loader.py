@@ -93,12 +93,45 @@ class LabDataLoader(BaseDataLoader):
         if self.data is None:
             self.load_data()
 
+        logger.info(f"[{hadm_id}] === TROPONIN DATA SEARCH DEBUG ===")
+        logger.info(f"[{hadm_id}] Searching for patient_id='{patient_id}', hadm_id='{hadm_id}'")
+        logger.info(f"[{hadm_id}] Total lab records in dataset: {len(self.data)}")
+        
+        # Check what data exists for this patient/admission combination
+        patient_admission_data = self.data[
+            (self.data['subject_id'] == patient_id) &
+            (self.data['hadm_id'] == hadm_id)
+        ]
+        logger.info(f"[{hadm_id}] Lab records for this patient/admission: {len(patient_admission_data)}")
+        
+        if not patient_admission_data.empty:
+            unique_labels = patient_admission_data['label'].unique()
+            logger.info(f"[{hadm_id}] Available lab test types for this admission: {list(unique_labels)[:10]}...")  # Show first 10
+            
+            # Check specifically for troponin-related tests
+            troponin_labels = [label for label in unique_labels if 'troponin' in str(label).lower()]
+            logger.info(f"[{hadm_id}] Troponin-related labels found: {troponin_labels}")
+        else:
+            logger.warning(f"[{hadm_id}] No lab data found for patient_id='{patient_id}', hadm_id='{hadm_id}'")
+            logger.info(f"[{hadm_id}] Sample patient_ids in dataset: {list(self.data['subject_id'].unique())[:5]}")
+            logger.info(f"[{hadm_id}] Sample hadm_ids in dataset: {list(self.data['hadm_id'].unique())[:5]}")
+
         # Get troponin tests for the specified admission (case insensitive match)
         troponin_tests = self.data[
             (self.data['subject_id'] == patient_id) &
             (self.data['hadm_id'] == hadm_id) &
             (self.data['label'].str.contains('troponin', case=False, na=False))
         ].copy()
+        
+        logger.info(f"[{hadm_id}] Final troponin test records found: {len(troponin_tests)}")
+        
+        if not troponin_tests.empty:
+            values = troponin_tests['valuenum'].dropna()
+            logger.info(f"[{hadm_id}] Troponin values found: {list(values)}")
+            logger.info(f"[{hadm_id}] Troponin value range: min={values.min():.6f}, max={values.max():.6f}")
+            logger.info(f"[{hadm_id}] Diagnostic threshold: 0.014 ng/mL")
+            above_threshold = values[values > 0.014]
+            logger.info(f"[{hadm_id}] Values above threshold: {len(above_threshold)} out of {len(values)}")
 
         # Sort by charttime
         if not troponin_tests.empty and 'charttime' in troponin_tests.columns:
