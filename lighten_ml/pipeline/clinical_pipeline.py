@@ -93,8 +93,7 @@ class ClinicalPipeline:
         max_notes = collectors_cfg.get("max_notes_per_admission")
 
         self.troponin_analyzer = TroponinAnalyzer(
-            self.lab_loader,
-            time_window_hours=troponin_config.get("time_window_hours", 72),
+            time_window_hours=troponin_config.get("time_window_hours", 72)
         )
         self.clinical_evidence_extractor = ClinicalEvidenceExtractor(
             self.notes_loader, llm_client=self.llm_client, max_notes=max_notes
