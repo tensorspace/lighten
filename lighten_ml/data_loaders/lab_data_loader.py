@@ -39,7 +39,7 @@ class LabDataLoader(BaseDataLoader):
         logger.info("Step 1: Loading lab items mapping...")
         try:
             self.lab_items = pd.read_csv(self.d_labitems_path)
-            logger.info(f"✅ Lab items loaded: {len(self.lab_items)} items")
+            logger.info(f"[SUCCESS] Lab items loaded: {len(self.lab_items)} items")
             logger.info(f"Lab items columns: {list(self.lab_items.columns)}")
 
             # Log some statistics about lab items
@@ -58,10 +58,10 @@ class LabDataLoader(BaseDataLoader):
                     f"Lab items stats: {unique_categories} categories, {unique_fluids} fluid types"
                 )
         except FileNotFoundError:
-            logger.error(f"❌ Lab items file not found at {self.d_labitems_path}")
+            logger.error(f"[ERROR] Lab items file not found at {self.d_labitems_path}")
             self.lab_items = pd.DataFrame()
         except Exception as e:
-            logger.error(f"❌ Error loading lab items: {e}")
+            logger.error(f"[ERROR] Error loading lab items: {e}")
             self.lab_items = pd.DataFrame()
 
         # Define dtypes for ID columns
@@ -136,11 +136,11 @@ class LabDataLoader(BaseDataLoader):
                     )
 
         except FileNotFoundError:
-            logger.error(f"❌ Lab events file not found: {self.lab_events_path}")
+            logger.error(f"[ERROR] Lab events file not found: {self.lab_events_path}")
             self.data = pd.DataFrame()
             return
         except Exception as e:
-            logger.error(f"❌ Error loading lab events: {e}")
+            logger.error(f"[ERROR] Error loading lab events: {e}")
             self.data = pd.DataFrame()
             return
 
@@ -149,7 +149,7 @@ class LabDataLoader(BaseDataLoader):
         self.data = pd.concat(chunks) if chunks else pd.DataFrame()
 
         if not self.data.empty:
-            logger.info(f"✅ Lab events concatenated: {len(self.data)} total records")
+            logger.info(f"[SUCCESS] Lab events concatenated: {len(self.data)} total records")
 
             # Log final dataset statistics
             unique_patients = (
@@ -175,7 +175,7 @@ class LabDataLoader(BaseDataLoader):
                     f"Label coverage: {labeled_records}/{len(self.data)} records ({label_coverage:.1f}%)"
                 )
         else:
-            logger.warning("❌ No lab data loaded - dataset is empty")
+            logger.warning("[WARNING] No lab data loaded - dataset is empty")
 
         # Convert time columns to datetime (both charttime and storetime)
         logger.info("Step 4: Converting time columns to datetime format...")
@@ -186,7 +186,7 @@ class LabDataLoader(BaseDataLoader):
                 logger.info(f"Converting {time_col} to datetime...")
                 try:
                     self.data[time_col] = pd.to_datetime(self.data[time_col])
-                    logger.info(f"✅ {time_col} conversion successful")
+                    logger.info(f"[SUCCESS] {time_col} conversion successful")
 
                     # Log time range for this column
                     if not self.data.empty:
@@ -194,15 +194,15 @@ class LabDataLoader(BaseDataLoader):
                         max_time = self.data[time_col].max()
                         logger.info(f"{time_col} range: {min_time} to {max_time}")
                 except Exception as e:
-                    logger.error(f"❌ Error converting {time_col}: {e}")
+                    logger.error(f"[ERROR] Error converting {time_col}: {e}")
             else:
-                logger.warning(f"⚠️ {time_col} column not found in data")
+                logger.warning(f"[WARNING] {time_col} column not found in data")
 
         # Log information about units column
         if "valueuom" in self.data.columns:
             unique_units = self.data["valueuom"].nunique()
             logger.info(
-                f"✅ Units column (valueuom) found: {unique_units} unique units"
+                f"[SUCCESS] Units column (valueuom) found: {unique_units} unique units"
             )
 
             # Log most common units for debugging
@@ -210,7 +210,7 @@ class LabDataLoader(BaseDataLoader):
                 top_units = self.data["valueuom"].value_counts().head(10)
                 logger.info(f"Top 10 most common units: {dict(top_units)}")
         else:
-            logger.warning("⚠️ Units column (valueuom) not found in data")
+            logger.warning("[WARNING] Units column (valueuom) not found in data")
 
         # Log critical columns for time series analysis
         critical_columns = ["charttime", "storetime", "valuenum", "valueuom"]
@@ -221,20 +221,20 @@ class LabDataLoader(BaseDataLoader):
             col for col in critical_columns if col not in self.data.columns
         ]
 
-        logger.info(f"✅ Critical columns available: {available_columns}")
+        logger.info(f"[SUCCESS] Critical columns available: {available_columns}")
         if missing_columns:
-            logger.warning(f"⚠️ Critical columns missing: {missing_columns}")
+            logger.warning(f"[WARNING] Critical columns missing: {missing_columns}")
 
         # Explain the difference between charttime and storetime
         if "charttime" in self.data.columns and "storetime" in self.data.columns:
-            logger.info("📋 Time column usage:")
+            logger.info("[INFO] Time column usage:")
             logger.info("  - charttime: When the measurement was taken (clinical time)")
             logger.info("  - storetime: When the result was stored in the system")
             logger.info(
                 "  - For time series analysis, charttime should be used as primary temporal reference"
             )
 
-        logger.info("✅ Lab data loading process completed successfully.")
+        logger.info("[SUCCESS] Lab data loading process completed successfully.")
 
         # Initialize simple itemid-to-label mapping
         self._initialize_itemid_mapping()
@@ -422,8 +422,9 @@ class LabDataLoader(BaseDataLoader):
         """
         logger.info(f"[{hadm_id}] Getting troponin tests using direct itemid mapping")
 
-        # Known troponin itemids from d_labitems.csv
-        troponin_itemids = [51003, 52642, 51002]  # Troponin T, Troponin I, Troponin I
+        # Following clinical guideline: ONLY Troponin T for MI diagnosis
+        # Diagnostic threshold: >0.014 ng/mL (per clinical guideline)
+        troponin_itemids = [51003]  # Troponin T ONLY - guideline specifies no Troponin I
 
         # Use the simplified itemid-based approach
         troponin_tests = self.get_lab_tests_by_itemids(
@@ -471,9 +472,10 @@ class LabDataLoader(BaseDataLoader):
         )
         logger.info(f"[{hadm_id}] Total lab records in dataset: {len(self.data)}")
 
-        # Define troponin itemids from d_labitems.csv mapping
-        # 51003: Troponin T, 52642: Troponin I, 51002: Troponin I
-        troponin_itemids = [51003, 52642, 51002]
+        # Following clinical guideline: ONLY Troponin T for MI diagnosis
+        # 51003: Troponin T - diagnostic threshold >0.014 ng/mL (per clinical guideline)
+        # Note: 52642 and 51002 are Troponin I - NOT used per guideline
+        troponin_itemids = [51003]  # Troponin T ONLY - guideline requirement
         logger.info(f"[{hadm_id}] Searching for troponin itemids: {troponin_itemids}")
 
         # Check what data exists for this patient/admission combination

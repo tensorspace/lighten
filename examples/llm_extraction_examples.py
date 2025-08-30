@@ -321,12 +321,12 @@ if __name__ == "__main__":
         print("\n" + "=" * 50)
         print("All examples completed successfully!")
         print("\nKey Benefits of LLM-based Extraction:")
-        print("✅ Context-aware symptom detection")
-        print("✅ Negation and temporal understanding")
-        print("✅ Medical abbreviation recognition")
-        print("✅ Confidence scoring for quality assessment")
-        print("✅ Structured output with detailed attributes")
-        print("✅ Automatic fallback to regex when needed")
+        print("[SUCCESS] Context-aware symptom detection")
+        print("[SUCCESS] Negation and temporal understanding")
+        print("[SUCCESS] Medical abbreviation recognition")
+        print("[SUCCESS] Confidence scoring for quality assessment")
+        print("[SUCCESS] Structured output with detailed attributes")
+        print("[SUCCESS] Automatic fallback to regex when needed")
 
     except Exception as e:
         print(f"Error running examples: {str(e)}")

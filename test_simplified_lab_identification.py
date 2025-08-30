@@ -36,7 +36,7 @@ def test_simplified_lab_identification():
 
         if lab_loader._itemid_to_label_map:
             logger.info(
-                f"✅ Itemid mapping initialized: {len(lab_loader._itemid_to_label_map)} items"
+                f"[SUCCESS] Itemid mapping initialized: {len(lab_loader._itemid_to_label_map)} items"
             )
 
             # Show some example mappings
@@ -52,17 +52,17 @@ def test_simplified_lab_identification():
                 if info:
                     logger.info(f"  {itemid}: {info['label']} (fluid: {info['fluid']})")
         else:
-            logger.warning("❌ Itemid mapping not initialized")
+            logger.warning("[ERROR] Itemid mapping not initialized")
 
         logger.info("=== TEST 2: Search Functions ===")
 
         # Test searching for troponin itemids
         troponin_itemids = lab_loader.search_itemids_by_label("troponin")
-        logger.info(f"✅ Troponin itemids found: {troponin_itemids}")
+        logger.info(f"[SUCCESS] Troponin itemids found: {troponin_itemids}")
 
         # Test searching for glucose itemids
         glucose_itemids = lab_loader.search_itemids_by_label("glucose")
-        logger.info(f"✅ Glucose itemids found: {glucose_itemids}")
+        logger.info(f"[SUCCESS] Glucose itemids found: {glucose_itemids}")
 
         # Show how different glucose tests are properly differentiated
         for itemid in glucose_itemids[:5]:  # Show first 5
@@ -78,7 +78,7 @@ def test_simplified_lab_identification():
         try:
             lab_loader.load_data()
             if lab_loader.data is not None and not lab_loader.data.empty:
-                logger.info(f"✅ Lab data loaded: {len(lab_loader.data)} records")
+                logger.info(f"[SUCCESS] Lab data loaded: {len(lab_loader.data)} records")
 
                 # Test with a sample patient
                 sample_patient = lab_loader.data.iloc[0]["subject_id"]
@@ -92,7 +92,7 @@ def test_simplified_lab_identification():
                     sample_patient, sample_hadm
                 )
                 logger.info(
-                    f"✅ Troponin tests found (simplified): {len(troponin_tests)}"
+                    f"[SUCCESS] Troponin tests found (simplified): {len(troponin_tests)}"
                 )
 
                 # Test direct itemid retrieval for glucose
@@ -103,7 +103,7 @@ def test_simplified_lab_identification():
                         glucose_itemids[:3],  # Test first 3 glucose types
                     )
                     logger.info(
-                        f"✅ Glucose tests found (direct itemid): {len(glucose_tests)}"
+                        f"[SUCCESS] Glucose tests found (direct itemid): {len(glucose_tests)}"
                     )
 
                 # Test legacy method compatibility
@@ -111,7 +111,7 @@ def test_simplified_lab_identification():
                     sample_patient, sample_hadm, "glucose"
                 )
                 logger.info(
-                    f"✅ Legacy glucose search (now uses itemids): {len(legacy_glucose)}"
+                    f"[SUCCESS] Legacy glucose search (now uses itemids): {len(legacy_glucose)}"
                 )
 
             else:
@@ -125,12 +125,12 @@ def test_simplified_lab_identification():
         logger.info("=== TEST 4: Efficiency Comparison ===")
 
         logger.info("Key improvements over complex LLM categorization:")
-        logger.info("1. ✅ NO LLM calls needed (much faster)")
-        logger.info("2. ✅ Direct itemid lookup (more reliable)")
-        logger.info("3. ✅ Automatic label mapping from d_labitems.csv")
-        logger.info("4. ✅ Proper specimen type differentiation via fluid field")
-        logger.info("5. ✅ No hard-coded mappings (reads dynamically from CSV)")
-        logger.info("6. ✅ Solves one-to-many mapping issues (each itemid is unique)")
+        logger.info("1. [SUCCESS] NO LLM calls needed (much faster)")
+        logger.info("2. [SUCCESS] Direct itemid lookup (more reliable)")
+        logger.info("3. [SUCCESS] Automatic label mapping from d_labitems.csv")
+        logger.info("4. [SUCCESS] Proper specimen type differentiation via fluid field")
+        logger.info("5. [SUCCESS] No hard-coded mappings (reads dynamically from CSV)")
+        logger.info("6. [SUCCESS] Solves one-to-many mapping issues (each itemid is unique)")
 
         logger.info("=== TEST 5: Practical Examples ===")
 
@@ -157,8 +157,8 @@ def test_simplified_lab_identification():
         logger.error(f"Test failed: {e}")
 
     logger.info("=== SIMPLIFIED LAB IDENTIFICATION TEST COMPLETE ===")
-    logger.info("🎉 BREAKTHROUGH: No complex LLM categorization needed!")
-    logger.info("🎉 Simple itemid->label mapping solves all issues efficiently!")
+    logger.info("[COMPLETE] BREAKTHROUGH: No complex LLM categorization needed!")
+    logger.info("[COMPLETE] Simple itemid->label mapping solves all issues efficiently!")
 
 
 if __name__ == "__main__":

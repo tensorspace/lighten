@@ -39,7 +39,7 @@ def test_enhanced_lab_functionality():
         # Test enhanced data loading (should show units and time column info)
         try:
             lab_loader.load_data()
-            logger.info("✅ Enhanced data loading completed")
+            logger.info("[SUCCESS] Enhanced data loading completed")
 
             if lab_loader.data is not None and not lab_loader.data.empty:
                 # Check for critical columns
@@ -53,9 +53,9 @@ def test_enhanced_lab_functionality():
                     if col not in lab_loader.data.columns
                 ]
 
-                logger.info(f"✅ Critical columns available: {available_columns}")
+                logger.info(f"[SUCCESS] Critical columns available: {available_columns}")
                 if missing_columns:
-                    logger.warning(f"⚠️ Critical columns missing: {missing_columns}")
+                    logger.warning(f"[WARNING] Critical columns missing: {missing_columns}")
 
                 # Test sample data with units
                 sample_data = lab_loader.data.head(5)
@@ -92,7 +92,7 @@ def test_enhanced_lab_functionality():
 
         # Show supported units
         supported_units = get_supported_troponin_units()
-        logger.info("✅ Supported troponin units:")
+        logger.info("[SUCCESS] Supported troponin units:")
         for unit, description in supported_units.items():
             logger.info(f"  - {unit}: {description}")
 
@@ -101,7 +101,7 @@ def test_enhanced_lab_functionality():
         # Test enhanced troponin analyzer
         try:
             troponin_analyzer = TroponinAnalyzer(lab_loader)
-            logger.info("✅ TroponinAnalyzer initialized with enhanced functionality")
+            logger.info("[SUCCESS] TroponinAnalyzer initialized with enhanced functionality")
 
             if lab_loader.data is not None and not lab_loader.data.empty:
                 # Test with sample patient
@@ -117,7 +117,7 @@ def test_enhanced_lab_functionality():
                     sample_patient, sample_hadm
                 )
 
-                logger.info("✅ Enhanced troponin analysis completed")
+                logger.info("[SUCCESS] Enhanced troponin analysis completed")
                 logger.info(
                     f"Troponin available: {troponin_evidence.get('troponin_available', False)}"
                 )
@@ -150,7 +150,7 @@ def test_enhanced_lab_functionality():
         if lab_loader.data is not None and not lab_loader.data.empty:
             # Check time column usage
             if "charttime" in lab_loader.data.columns:
-                logger.info("✅ charttime available for time series analysis")
+                logger.info("[SUCCESS] charttime available for time series analysis")
 
                 # Show time range
                 min_time = lab_loader.data["charttime"].min()
@@ -167,7 +167,7 @@ def test_enhanced_lab_functionality():
                 ].sort_values("charttime")
 
                 logger.info(
-                    f"✅ Time series for patient {sample_patient}: {len(patient_data)} records"
+                    f"[SUCCESS] Time series for patient {sample_patient}: {len(patient_data)} records"
                 )
 
                 if len(patient_data) > 1:
@@ -177,7 +177,7 @@ def test_enhanced_lab_functionality():
                     logger.info(f"Patient time span: {duration}")
             else:
                 logger.warning(
-                    "⚠️ charttime not available - time series analysis limited"
+                    "[WARNING] charttime not available - time series analysis limited"
                 )
 
         logger.info("=== TEST 5: Integration Verification ===")
@@ -194,11 +194,11 @@ def test_enhanced_lab_functionality():
         # 2. Units are properly handled and converted
         # 3. Time columns are properly processed
 
-        logger.info("✅ Integration verification:")
-        logger.info("  1. ✅ Column name issue fixed (valuenum vs value)")
-        logger.info("  2. ✅ Units properly loaded and converted")
-        logger.info("  3. ✅ Time columns properly distinguished")
-        logger.info("  4. ✅ Enhanced logging for debugging")
+        logger.info("[SUCCESS] Integration verification:")
+        logger.info("  1. [SUCCESS] Column name issue fixed (valuenum vs value)")
+        logger.info("  2. [SUCCESS] Units properly loaded and converted")
+        logger.info("  3. [SUCCESS] Time columns properly distinguished")
+        logger.info("  4. [SUCCESS] Enhanced logging for debugging")
 
     except Exception as e:
         logger.error(f"Test failed: {e}")
@@ -207,8 +207,8 @@ def test_enhanced_lab_functionality():
         traceback.print_exc()
 
     logger.info("=== ENHANCED LAB FUNCTIONALITY TEST COMPLETE ===")
-    logger.info("🎉 Enhanced functionality ready for medical diagnosis!")
-    logger.info("🎉 Units and time series support now available!")
+    logger.info("[COMPLETE] Enhanced functionality ready for medical diagnosis!")
+    logger.info("[COMPLETE] Units and time series support now available!")
 
 
 if __name__ == "__main__":

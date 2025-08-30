@@ -66,11 +66,11 @@ def test_llm_unit_conversion():
             conversion_results.append(result)
 
             logger.info(
-                f"✅ Conversion: {value} {unit} -> {converted_value} {final_unit}"
+                f"[SUCCESS] Conversion: {value} {unit} -> {converted_value} {final_unit}"
             )
 
         except Exception as e:
-            logger.error(f"❌ Conversion failed for {value} {unit}: {e}")
+            logger.error(f"[ERROR] Conversion failed for {value} {unit}: {e}")
             conversion_results.append(
                 {
                     "original": f"{value} {unit}",
@@ -86,7 +86,7 @@ def test_llm_unit_conversion():
         1 for r in conversion_results if r["conversion_successful"]
     )
     logger.info(
-        f"\n✅ LLM Unit Conversion Summary: {successful_conversions}/{len(conversion_results)} successful"
+        f"\n[SUCCESS] LLM Unit Conversion Summary: {successful_conversions}/{len(conversion_results)} successful"
     )
 
     logger.info("=== TEST 2: Unit-Aware Comparisons ===")
@@ -120,14 +120,14 @@ def test_llm_unit_conversion():
             logger.info(f"Ratio: {comparison['ratio']:.3f}")
 
             if comparison["comparison"] == expected:
-                logger.info("✅ Comparison result matches expectation")
+                logger.info("[SUCCESS] Comparison result matches expectation")
             else:
                 logger.warning(
-                    f"⚠️ Comparison mismatch: got {comparison['comparison']}, expected {expected}"
+                    f"[WARNING] Comparison mismatch: got {comparison['comparison']}, expected {expected}"
                 )
 
         except Exception as e:
-            logger.error(f"❌ Comparison failed: {e}")
+            logger.error(f"[ERROR] Comparison failed: {e}")
 
     logger.info("=== TEST 3: Unit-Aware Threshold Analysis ===")
 
@@ -160,14 +160,14 @@ def test_llm_unit_conversion():
             logger.info(f"Fold change: {threshold_result['fold_change']:.3f}x")
 
             if threshold_result["above_threshold"] == expected_above:
-                logger.info("✅ Threshold analysis matches expectation")
+                logger.info("[SUCCESS] Threshold analysis matches expectation")
             else:
                 logger.warning(
-                    f"⚠️ Threshold mismatch: got {threshold_result['above_threshold']}, expected {expected_above}"
+                    f"[WARNING] Threshold mismatch: got {threshold_result['above_threshold']}, expected {expected_above}"
                 )
 
         except Exception as e:
-            logger.error(f"❌ Threshold analysis failed: {e}")
+            logger.error(f"[ERROR] Threshold analysis failed: {e}")
 
     logger.info("=== TEST 4: Integration with TroponinAnalyzer ===")
 
@@ -179,7 +179,7 @@ def test_llm_unit_conversion():
         lab_loader = LabDataLoader(lab_events_path, d_labitems_path)
         troponin_analyzer = TroponinAnalyzer(lab_loader)
 
-        logger.info("✅ TroponinAnalyzer initialized with LLM unit conversion support")
+        logger.info("[SUCCESS] TroponinAnalyzer initialized with LLM unit conversion support")
 
         # Test with sample data if available
         try:
@@ -199,7 +199,7 @@ def test_llm_unit_conversion():
                 )
 
                 logger.info(
-                    "✅ Enhanced troponin analysis with LLM conversions completed"
+                    "[SUCCESS] Enhanced troponin analysis with LLM conversions completed"
                 )
                 logger.info(
                     f"Troponin available: {evidence.get('troponin_available', False)}"
@@ -257,21 +257,21 @@ def test_llm_unit_conversion():
         try:
             converted_value, final_unit = convert_troponin_units(value, unit)
             logger.info(
-                f"✅ Conversion successful: {value} {unit} -> {converted_value} {final_unit}"
+                f"[SUCCESS] Conversion successful: {value} {unit} -> {converted_value} {final_unit}"
             )
         except Exception as e:
             logger.info(f"ℹ️ Conversion behavior: {e}")
 
     logger.info("=== LLM UNIT CONVERSION TEST COMPLETE ===")
-    logger.info("🎉 LLM-based unit conversion system ready!")
-    logger.info("🎉 Unit-aware comparisons implemented!")
+    logger.info("[COMPLETE] LLM-based unit conversion system ready!")
+    logger.info("[COMPLETE] Unit-aware comparisons implemented!")
     logger.info(
-        "🎉 Medical diagnosis pipeline enhanced with intelligent unit handling!"
+        "[COMPLETE] Medical diagnosis pipeline enhanced with intelligent unit handling!"
     )
 
     # Show supported units
     supported_units = get_supported_troponin_units()
-    logger.info("\n📋 Supported troponin units:")
+    logger.info("\n[DATA] Supported troponin units:")
     for unit, description in supported_units.items():
         logger.info(f"  - {unit}: {description}")
 

@@ -28,7 +28,7 @@ def test_debug_logging():
     """Demonstrate enhanced debugging logs for unit conversion and comparison."""
 
     logger.info("=" * 80)
-    logger.info("🔍 ENHANCED DEBUGGING LOGS DEMONSTRATION")
+    logger.info("[SEARCH] ENHANCED DEBUGGING LOGS DEMONSTRATION")
     logger.info("=" * 80)
 
     # Test cases that will trigger different logging scenarios
@@ -83,13 +83,13 @@ def test_debug_logging():
         },
     ]
 
-    logger.info("\n🧪 TESTING UNIT CONVERSION WITH ENHANCED LOGGING")
+    logger.info("\n[TEST] TESTING UNIT CONVERSION WITH ENHANCED LOGGING")
     logger.info("-" * 60)
 
     for i, scenario in enumerate(test_scenarios, 1):
-        logger.info(f"\n📋 TEST SCENARIO {i}: {scenario['name']}")
-        logger.info(f"📋 Description: {scenario['description']}")
-        logger.info(f"📋 Input: {scenario['value']} {scenario['unit']}")
+        logger.info(f"\n[DATA] TEST SCENARIO {i}: {scenario['name']}")
+        logger.info(f"[DATA] Description: {scenario['description']}")
+        logger.info(f"[DATA] Input: {scenario['value']} {scenario['unit']}")
         logger.info("-" * 40)
 
         try:
@@ -98,21 +98,21 @@ def test_debug_logging():
                 scenario["value"], scenario["unit"]
             )
 
-            logger.info(f"✅ SCENARIO {i} CONVERSION COMPLETE")
+            logger.info(f"[SUCCESS] SCENARIO {i} CONVERSION COMPLETE")
 
             # Test threshold comparison with detailed logging
             threshold_result = is_above_troponin_threshold(
                 scenario["value"], scenario["unit"]
             )
 
-            logger.info(f"✅ SCENARIO {i} THRESHOLD COMPARISON COMPLETE")
+            logger.info(f"[SUCCESS] SCENARIO {i} THRESHOLD COMPARISON COMPLETE")
 
         except Exception as e:
-            logger.error(f"❌ SCENARIO {i} FAILED: {e}")
+            logger.error(f"[ERROR] SCENARIO {i} FAILED: {e}")
 
         logger.info("=" * 60)
 
-    logger.info("\n🔄 TESTING UNIT-AWARE VALUE COMPARISONS")
+    logger.info("\n[CONVERT] TESTING UNIT-AWARE VALUE COMPARISONS")
     logger.info("-" * 60)
 
     # Test unit-aware comparisons
@@ -144,11 +144,11 @@ def test_debug_logging():
     ]
 
     for i, test in enumerate(comparison_tests, 1):
-        logger.info(f"\n📊 COMPARISON TEST {i}: {test['name']}")
+        logger.info(f"\n[STATS] COMPARISON TEST {i}: {test['name']}")
         logger.info(
-            f"📊 Comparing: {test['value1']} {test['unit1']} vs {test['value2']} {test['unit2']}"
+            f"[STATS] Comparing: {test['value1']} {test['unit1']} vs {test['value2']} {test['unit2']}"
         )
-        logger.info(f"📊 Expected: {test['expected']}")
+        logger.info(f"[STATS] Expected: {test['expected']}")
         logger.info("-" * 40)
 
         try:
@@ -156,30 +156,30 @@ def test_debug_logging():
                 test["value1"], test["unit1"], test["value2"], test["unit2"]
             )
 
-            logger.info(f"✅ COMPARISON {i} COMPLETE")
-            logger.info(f"📊 Result: {comparison['comparison']}")
+            logger.info(f"[SUCCESS] COMPARISON {i} COMPLETE")
+            logger.info(f"[STATS] Result: {comparison['comparison']}")
             logger.info(
-                f"📊 Match expected: {comparison['comparison'] == test['expected']}"
+                f"[STATS] Match expected: {comparison['comparison'] == test['expected']}"
             )
 
         except Exception as e:
-            logger.error(f"❌ COMPARISON {i} FAILED: {e}")
+            logger.error(f"[ERROR] COMPARISON {i} FAILED: {e}")
 
         logger.info("=" * 60)
 
-    logger.info("\n🎯 LOGGING FEATURES DEMONSTRATED:")
-    logger.info("✅ Unit conversion process with step-by-step details")
-    logger.info("✅ LLM conversion attempts and responses")
-    logger.info("✅ Fallback conversion when LLM fails")
-    logger.info("✅ Threshold comparison with clinical significance levels")
-    logger.info("✅ Unit-aware value comparisons")
-    logger.info("✅ Visual indicators (emojis) for easy log parsing")
-    logger.info("✅ Detailed error handling and debugging information")
-    logger.info("✅ Conversion factors and mathematical details")
-    logger.info("✅ Clinical interpretation of results")
+    logger.info("\n[TARGET] LOGGING FEATURES DEMONSTRATED:")
+    logger.info("[SUCCESS] Unit conversion process with step-by-step details")
+    logger.info("[SUCCESS] LLM conversion attempts and responses")
+    logger.info("[SUCCESS] Fallback conversion when LLM fails")
+    logger.info("[SUCCESS] Threshold comparison with clinical significance levels")
+    logger.info("[SUCCESS] Unit-aware value comparisons")
+    logger.info("[SUCCESS] Visual indicators (emojis) for easy log parsing")
+    logger.info("[SUCCESS] Detailed error handling and debugging information")
+    logger.info("[SUCCESS] Conversion factors and mathematical details")
+    logger.info("[SUCCESS] Clinical interpretation of results")
 
-    logger.info("\n🎉 ENHANCED DEBUGGING LOGS DEMONSTRATION COMPLETE!")
-    logger.info("🎉 These logs will help debug unit conversion issues in MI diagnosis!")
+    logger.info("\n[COMPLETE] ENHANCED DEBUGGING LOGS DEMONSTRATION COMPLETE!")
+    logger.info("[COMPLETE] These logs will help debug unit conversion issues in MI diagnosis!")
     logger.info("=" * 80)
 
 

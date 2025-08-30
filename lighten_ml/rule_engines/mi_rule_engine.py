@@ -245,12 +245,18 @@ class MIRuleEngine(BaseRuleEngine[MIRuleEngineConfig]):
                 threshold_analysis = test.get("threshold_analysis", {})
                 fold_change = threshold_analysis.get("fold_change", "N/A")
 
-                logger.info(f"  🧪 Test {i+1}:")
-                logger.info(f"    📋 Original: {original_value} {original_unit}")
-                logger.info(f"    📋 Converted: {converted_value} {converted_unit}")
-                logger.info(f"    📋 Above threshold: {above_threshold}")
-                logger.info(f"    📋 Fold change: {fold_change}")
-                logger.info(f"    📋 Timestamp: {test.get('timestamp', 'N/A')}")
+                logger.info(f"  [TEST] Test {i+1}:")
+                logger.info(f"    [DATA] Original: {original_value} {original_unit}")
+                logger.info(f"    [DATA] Converted: {converted_value} {converted_unit}")
+                logger.info(f"    [DATA] Above threshold: {above_threshold}")
+                
+                # Handle NaN fold_change values
+                if isinstance(fold_change, (int, float)) and not (fold_change != fold_change):  # Check for NaN
+                    logger.info(f"    [DATA] Fold change: {fold_change}")
+                else:
+                    logger.info(f"    [DATA] Fold change: N/A (invalid calculation)")
+                    
+                logger.info(f"    [DATA] Timestamp: {test.get('timestamp', 'N/A')}")
         else:
             logger.warning("CRITERIA A DEBUG - No troponin_tests found in evidence")
 
