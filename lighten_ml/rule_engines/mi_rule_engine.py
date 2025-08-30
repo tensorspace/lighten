@@ -131,20 +131,34 @@ class MIRuleEngine(BaseRuleEngine[MIRuleEngineConfig]):
             and self.config.require_ischemia_for_single_troponin
         )
 
+        logger.info("=== FINAL MI RULE ENGINE DECISION ===")
+        logger.info(f"FINAL DEBUG - Criteria A met: {criteria_met['A']}")
+        logger.info(f"FINAL DEBUG - Criteria B met: {criteria_met['B']}")
+        logger.info(f"FINAL DEBUG - Criteria A confidence: {confidence['A']}")
+        logger.info(f"FINAL DEBUG - Criteria B confidence: {confidence['B']}")
+        logger.info(f"FINAL DEBUG - Is single troponin case: {is_single_troponin_case}")
+        logger.info(f"FINAL DEBUG - Require both criteria: {self.config.require_both_criteria}")
+
         if is_single_troponin_case:
             passed = criteria_met["A"] and criteria_met["B"]
             overall_confidence = min(confidence["A"], confidence["B"])
             details["summary"] = (
                 "MI criteria met (single elevated troponin with ischemia)"
             )
+            logger.info(f"FINAL DEBUG - Single troponin case: A={criteria_met['A']}, B={criteria_met['B']}, Result={passed}")
         elif self.config.require_both_criteria:
             passed = criteria_met["A"] and criteria_met["B"]
             overall_confidence = min(confidence["A"], confidence["B"])
             details["summary"] = "MI criteria met (biomarker and ischemia evidence)"
+            logger.info(f"FINAL DEBUG - Both criteria required: A={criteria_met['A']}, B={criteria_met['B']}, Result={passed}")
         else:
             passed = criteria_met["A"] or criteria_met["B"]
             overall_confidence = max(confidence["A"], confidence["B"])
             details["summary"] = "MI criteria met (biomarker or ischemia evidence)"
+            logger.info(f"FINAL DEBUG - Either criteria: A={criteria_met['A']}, B={criteria_met['B']}, Result={passed}")
+
+        logger.info(f"FINAL DEBUG - Overall MI diagnosis: {passed}")
+        logger.info(f"FINAL DEBUG - Overall confidence: {overall_confidence}")
 
         # Add summary to details
         details["summary_details"] = {
@@ -197,6 +211,21 @@ class MIRuleEngine(BaseRuleEngine[MIRuleEngineConfig]):
         # Use the pre-calculated result from TroponinAnalyzer
         criteria_met = troponin_evidence.get("mi_criteria_met", False)
         criteria_details = troponin_evidence.get("criteria_details", {})
+        
+        # DETAILED LOGGING FOR DEBUGGING
+        logger.info(f"CRITERIA A DEBUG - mi_criteria_met: {criteria_met}")
+        logger.info(f"CRITERIA A DEBUG - criteria_details: {criteria_details}")
+        logger.info(f"CRITERIA A DEBUG - max_troponin: {troponin_evidence.get('max_troponin', 'N/A')}")
+        logger.info(f"CRITERIA A DEBUG - troponin_tests count: {len(troponin_evidence.get('troponin_tests', []))}")
+        
+        # Log individual troponin values for debugging
+        troponin_tests = troponin_evidence.get('troponin_tests', [])
+        if troponin_tests:
+            logger.info(f"CRITERIA A DEBUG - Individual troponin values:")
+            for i, test in enumerate(troponin_tests[:5]):  # Log first 5 tests
+                logger.info(f"  Test {i+1}: value={test.get('value', 'N/A')}, timestamp={test.get('timestamp', 'N/A')}")
+        else:
+            logger.warning("CRITERIA A DEBUG - No troponin_tests found in evidence")
 
         if criteria_met:
             # Assign confidence based on the type of criteria met
@@ -224,8 +253,12 @@ class MIRuleEngine(BaseRuleEngine[MIRuleEngineConfig]):
                 }
             )
         else:
-            result["details"] = {"reason": "No troponin criteria met"}
+            logger.warning("CRITERIA A FAILED: Troponin criteria not met")
+            logger.warning(f"CRITERIA A FAILED - mi_criteria_met was: {criteria_met}")
+            logger.warning(f"CRITERIA A FAILED - criteria_details was: {criteria_details}")
+            result["details"] = {"reason": "No troponin criteria met", "debug_info": criteria_details}
 
+        logger.info(f"CRITERIA A FINAL RESULT: met={result['met']}, confidence={result['confidence']}")
         return result
 
     def _evaluate_criteria_b(self, evidence: Dict[str, Any]) -> Dict[str, Any]:
@@ -237,7 +270,16 @@ class MIRuleEngine(BaseRuleEngine[MIRuleEngineConfig]):
         Returns:
             Dictionary with evaluation results
         """
+        logger.info("=== RULE ENGINE CRITERIA B (ISCHEMIA) EVALUATION ===")
+        
         result = {"met": False, "confidence": 0.0, "details": {}, "evidence": []}
+
+        # Log available evidence types for debugging
+        logger.info(f"CRITERIA B DEBUG - Available evidence keys: {list(evidence.keys())}")
+        logger.info(f"CRITERIA B DEBUG - Clinical symptoms available: {'symptoms' in evidence}")
+        logger.info(f"CRITERIA B DEBUG - ECG evidence available: {'ecg' in evidence}")
+        logger.info(f"CRITERIA B DEBUG - Imaging evidence available: {'imaging' in evidence}")
+        logger.info(f"CRITERIA B DEBUG - Angiography evidence available: {'angiography' in evidence}")
 
         # Check each type of ischemia evidence
         evidence_sources = []
@@ -245,7 +287,9 @@ class MIRuleEngine(BaseRuleEngine[MIRuleEngineConfig]):
         # 1. Symptoms
         if self.config.consider_clinical_symptoms:
             symptoms = evidence.get("symptoms", [])
+            logger.info(f"CRITERIA B DEBUG - Symptoms found: {len(symptoms)}")
             if symptoms:
+                logger.info(f"CRITERIA B DEBUG - First few symptoms: {[s.get('name', 'unknown') for s in symptoms[:3]]}")
                 evidence_sources.append(
                     {
                         "type": "symptoms",
@@ -254,14 +298,19 @@ class MIRuleEngine(BaseRuleEngine[MIRuleEngineConfig]):
                         "details": symptoms,
                     }
                 )
+            else:
+                logger.info("CRITERIA B DEBUG - No symptoms found in evidence")
 
         # 2. ECG findings
         if self.config.consider_ecg_findings:
             ecg_evidence = evidence.get("ecg", {})
             ecg_findings = ecg_evidence.get("ecg_findings", [])
             mi_related_ecg = [f for f in ecg_findings if f.get("mi_related", False)]
-
+            
+            logger.info(f"CRITERIA B DEBUG - ECG findings total: {len(ecg_findings)}")
+            logger.info(f"CRITERIA B DEBUG - MI-related ECG findings: {len(mi_related_ecg)}")
             if mi_related_ecg:
+                logger.info(f"CRITERIA B DEBUG - ECG findings: {[f.get('finding', 'unknown') for f in mi_related_ecg[:3]]}")
                 evidence_sources.append(
                     {
                         "type": "ecg",
@@ -270,30 +319,50 @@ class MIRuleEngine(BaseRuleEngine[MIRuleEngineConfig]):
                         "details": mi_related_ecg,
                     }
                 )
+            else:
+                logger.info("CRITERIA B DEBUG - No MI-related ECG findings found")
 
         # 3. Imaging findings
         if self.config.consider_imaging_evidence:
             imaging_evidence = evidence.get("imaging", {})
-            if imaging_evidence.get("wall_motion_abnormalities", False):
+            wall_motion_abnormalities = imaging_evidence.get("wall_motion_abnormalities", False)
+            imaging_findings = imaging_evidence.get("imaging_findings", [])
+            
+            logger.info(f"CRITERIA B DEBUG - Wall motion abnormalities: {wall_motion_abnormalities}")
+            logger.info(f"CRITERIA B DEBUG - Imaging findings count: {len(imaging_findings)}")
+            
+            if wall_motion_abnormalities:
+                logger.info("CRITERIA B DEBUG - Wall motion abnormalities found - adding to evidence")
                 evidence_sources.append(
                     {
                         "type": "imaging",
                         "confidence": 0.85,
-                        "details": imaging_evidence.get("imaging_findings", []),
+                        "details": imaging_findings,
                     }
                 )
+            else:
+                logger.info("CRITERIA B DEBUG - No wall motion abnormalities found")
 
         # 4. Angiographic findings
         if self.config.consider_angiographic_evidence:
             angio_evidence = evidence.get("angiography", {})
-            if angio_evidence.get("thrombus_present", False):
+            thrombus_present = angio_evidence.get("thrombus_present", False)
+            angio_findings = angio_evidence.get("angiography_findings", [])
+            
+            logger.info(f"CRITERIA B DEBUG - Thrombus present: {thrombus_present}")
+            logger.info(f"CRITERIA B DEBUG - Angiography findings count: {len(angio_findings)}")
+            
+            if thrombus_present:
+                logger.info("CRITERIA B DEBUG - Thrombus found - adding to evidence")
                 evidence_sources.append(
                     {
                         "type": "angiography",
                         "confidence": 0.95,  # Very high confidence for direct visualization
-                        "details": angio_evidence.get("angiography_findings", []),
+                        "details": angio_findings,
                     }
                 )
+            else:
+                logger.info("CRITERIA B DEBUG - No thrombus found")
 
         # Determine if criteria are met
         met = len(evidence_sources) >= self.config.required_ischemia_criteria
@@ -305,6 +374,13 @@ class MIRuleEngine(BaseRuleEngine[MIRuleEngineConfig]):
             avg_confidence = total_weight / len(evidence_sources)
         else:
             avg_confidence = 0.0
+
+        # FINAL CRITERIA B LOGGING
+        logger.info(f"CRITERIA B DEBUG - Total evidence sources found: {len(evidence_sources)}")
+        logger.info(f"CRITERIA B DEBUG - Required ischemia criteria: {self.config.required_ischemia_criteria}")
+        logger.info(f"CRITERIA B DEBUG - Evidence source types: {[src['type'] for src in evidence_sources]}")
+        logger.info(f"CRITERIA B DEBUG - Criteria B met: {met}")
+        logger.info(f"CRITERIA B DEBUG - Average confidence: {avg_confidence}")
 
         # Update result
         result.update(
@@ -342,4 +418,5 @@ class MIRuleEngine(BaseRuleEngine[MIRuleEngineConfig]):
             }
         )
 
+        logger.info(f"CRITERIA B FINAL RESULT: met={result['met']}, confidence={result['confidence']}")
         return result

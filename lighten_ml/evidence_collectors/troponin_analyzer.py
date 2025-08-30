@@ -139,9 +139,22 @@ class TroponinAnalyzer(BaseEvidenceCollector):
         if not troponin_values:
             return False, {"reason": "No troponin values available"}
 
+        # DETAILED DEBUGGING FOR TROPONIN ANALYSIS
+        logger.info(f"TROPONIN DEBUG - Total values to analyze: {len(troponin_values)}")
+        logger.info(f"TROPONIN DEBUG - Threshold: {self.TROPONIN_THRESHOLD}")
+        
+        # Log first few troponin values for debugging
+        for i, t in enumerate(troponin_values[:5]):
+            logger.info(f"TROPONIN DEBUG - Value {i+1}: {t.get('value', 'N/A')}, above_threshold: {t.get('above_threshold', 'N/A')}")
+        
         # A single elevated value can be evidence, but rise/fall is stronger.
         # The final decision is made by the rule engine, which considers ischemia.
         has_one_elevated = any(t["above_threshold"] for t in troponin_values)
+        elevated_count = sum(1 for t in troponin_values if t["above_threshold"])
+        
+        logger.info(f"TROPONIN DEBUG - Has one elevated: {has_one_elevated}")
+        logger.info(f"TROPONIN DEBUG - Total elevated values: {elevated_count}")
+        logger.info(f"TROPONIN DEBUG - Max value in dataset: {max(t.get('value', 0) for t in troponin_values)}")
 
         # Need at least 2 values to check for rise/fall patterns
         if len(troponin_values) < 2:
@@ -156,23 +169,31 @@ class TroponinAnalyzer(BaseEvidenceCollector):
             }
 
         # Check for rise pattern
+        logger.info(f"TROPONIN ANALYSIS - Checking for rise patterns...")
         rise_result = self._check_rise_pattern(troponin_values)
         if rise_result["met"]:
-            return True, {"criteria": "Rise pattern detected", "details": rise_result}
+            logger.info(f"TROPONIN DECISION - Rise pattern detected: {rise_result['details']}")
+            return True, {"criteria": "Rise pattern detected", "details": rise_result, "decision_basis": "Dynamic rise pattern in troponin levels"}
 
         # Check for fall pattern
+        logger.info(f"TROPONIN ANALYSIS - Checking for fall patterns...")
         fall_result = self._check_fall_pattern(troponin_values)
         if fall_result["met"]:
-            return True, {"criteria": "Fall pattern detected", "details": fall_result}
+            logger.info(f"TROPONIN DECISION - Fall pattern detected: {fall_result['details']}")
+            return True, {"criteria": "Fall pattern detected", "details": fall_result, "decision_basis": "Dynamic fall pattern in troponin levels"}
 
         # If no pattern, but one value is elevated, report that.
         if has_one_elevated:
+            logger.info(f"TROPONIN DECISION - Single elevated troponin found (no dynamic pattern)")
+            logger.info(f"TROPONIN DECISION - Elevated values count: {elevated_count} out of {len(troponin_values)}")
             return True, {
                 "criteria": "Single elevated troponin",
                 "reason": "One or more troponin values were above the threshold, but no rise/fall pattern was confirmed.",
+                "decision_basis": f"At least one troponin value above {self.TROPONIN_THRESHOLD} ng/mL threshold"
             }
 
-        return False, {"reason": "No MI criteria met"}
+        logger.warning(f"TROPONIN DECISION - No MI criteria met: max_value={max(t.get('value', 0) for t in troponin_values)}, threshold={self.TROPONIN_THRESHOLD}")
+        return False, {"reason": "No MI criteria met", "decision_basis": "No troponin values above threshold and no dynamic patterns detected"}
 
     def _check_rise_pattern(self, values: List[Dict]) -> Dict:
         """Check for rise pattern in troponin values within the time window."""

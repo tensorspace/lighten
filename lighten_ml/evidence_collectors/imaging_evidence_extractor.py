@@ -56,22 +56,39 @@ class ImagingEvidenceExtractor(BaseEvidenceCollector):
         if rad_notes.empty:
             return evidence
 
+        logger.info(f"[{hadm_id}] IMAGING EXTRACTION - Method selection: LLM available={self.llm_client and self.llm_client.enabled}")
+        
         extracted_with_llm = False
         if self.llm_client and self.llm_client.enabled:
             try:
+                logger.info(f"[{hadm_id}] IMAGING EXTRACTION - Attempting LLM extraction...")
                 findings = self._extract_with_llm(rad_notes)
                 evidence["imaging_findings"] = findings
                 evidence["metadata"]["extraction_mode"] = "llm"
                 extracted_with_llm = True
-            except Exception:
-                pass
+                logger.info(f"[{hadm_id}] IMAGING EXTRACTION - LLM extraction successful: {len(findings)} findings")
+            except Exception as e:
+                logger.warning(f"[{hadm_id}] IMAGING EXTRACTION - LLM extraction failed: {str(e)}, falling back to regex")
 
         if not extracted_with_llm:
             evidence["metadata"]["extraction_mode"] = (
                 "regex_fallback" if self.llm_client else "regex"
             )
+            logger.info(f"[{hadm_id}] IMAGING EXTRACTION - Using regex extraction")
             findings = self._extract_with_regex(rad_notes)
             evidence["imaging_findings"] = findings
+            logger.info(f"[{hadm_id}] IMAGING EXTRACTION - Regex extraction complete: {len(findings)} findings")
+
+        # Log detailed imaging evidence found
+        if findings:
+            logger.info(f"[{hadm_id}] IMAGING EVIDENCE FOUND:")
+            for i, finding in enumerate(findings[:3], 1):  # Log first 3 findings
+                logger.info(f"[{hadm_id}]   {i}. {finding.get('finding', 'unknown')}")
+                logger.info(f"[{hadm_id}]      New/Acute: {finding.get('is_new', 'N/A')}")
+                logger.info(f"[{hadm_id}]      MI-Related: {finding.get('mi_related', 'N/A')}")
+                logger.info(f"[{hadm_id}]      Context: {finding.get('context', 'N/A')[:100]}...")
+        else:
+            logger.info(f"[{hadm_id}] IMAGING EVIDENCE - No imaging findings detected")
 
         # Add a summary flag for the rule engine
         evidence["wall_motion_abnormalities"] = any(
