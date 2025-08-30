@@ -155,9 +155,13 @@ class TestTroponinAnalyzer(unittest.TestCase):
 
         self.mock_lab_loader.get_patient_labs.return_value = troponin_data
 
-        with self.assertLogs('lighten_ml.evidence_collectors.troponin_analyzer', level='INFO') as cm:
+        with self.assertLogs(
+            "lighten_ml.evidence_collectors.troponin_analyzer", level="INFO"
+        ) as cm:
             self.analyzer.collect_evidence(patient_id, hadm_id)
-            self.assertTrue(any(f"[{patient_id}][{hadm_id}]" in msg for msg in cm.output))
+            self.assertTrue(
+                any(f"[{patient_id}][{hadm_id}]" in msg for msg in cm.output)
+            )
 
 
 if __name__ == "__main__":

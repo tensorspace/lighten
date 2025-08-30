@@ -2,7 +2,7 @@
 
 import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from .base_evidence_collector import BaseEvidenceCollector
 
@@ -20,186 +20,45 @@ class ImagingEvidenceExtractor(BaseEvidenceCollector):
                 re.IGNORECASE,
             ),
             "mi_related": True,
-        }
+        },
+        {
+            "name": "Loss of Viable Myocardium",
+            "pattern": re.compile(
+                r"(loss of.*viab|non-viable|infarct|scar|late gadolinium enhancement|lge)",
+                re.IGNORECASE,
+            ),
+            "mi_related": True,
+        },
     ]
 
-    def __init__(
-        self,
-        notes_data_loader: Any,
-        llm_client: Optional[Any] = None,
-        max_notes: Optional[int] = None,
-    ):
-        """Initialize the imaging evidence extractor.
+    def __init__(self):
+        """Initialize the imaging evidence extractor."""
+        super().__init__()
 
-        Args:
-            notes_data_loader: Instance of ClinicalNotesDataLoader
-            llm_client: Optional instance of the LLM client
-            max_notes: Maximum number of notes to process
-        """
-        super().__init__(
-            notes_data_loader=notes_data_loader,
-            llm_client=llm_client,
-            max_notes=max_notes,
-        )
+    def collect_evidence(
+        self, patient_id: str, hadm_id: str, text: str
+    ) -> Dict[str, Any]:
+        """Collect imaging evidence from a given clinical note text."""
+        log_prefix = f"[{patient_id}][{hadm_id}] [IMAGING]"
+        logger.debug(f"{log_prefix} Starting imaging evidence extraction.")
 
-    def collect_evidence(self, patient_id: str, hadm_id: str) -> Dict[str, Any]:
-        """Collect imaging evidence from notes for a specific admission."""
-        log_prefix = f"[{patient_id}][{hadm_id}] [IMAGING_EXTRACTOR]"
+        evidence = {"imaging_findings": []}
+        findings = []
 
-        evidence = self._get_evidence_base()
-        evidence["imaging_findings"] = []
-        evidence["metadata"] = {"extraction_mode": "none"}
+        for definition in self.IMAGING_PATTERNS:
+            for match in definition["pattern"].finditer(text):
+                finding = {
+                    "finding_type": "imaging",
+                    "finding_name": definition["name"],
+                    "evidence": match.group(0),
+                    "mi_related": definition["mi_related"],
+                    "source": "regex",
+                }
+                findings.append(finding)
 
-        logger.info(f"{log_prefix} Fetching clinical notes for imaging evidence.")
-        notes = self.notes_data_loader.get_patient_notes(patient_id, hadm_id)
-        # Filter for relevant notes like radiology, echo, etc.
-        rad_notes = notes[notes["note_type"].isin(["Echo", "Radiology"])]
-        logger.info(f"{log_prefix} Found {len(rad_notes)} imaging reports out of {len(notes)} total notes.")
-
-        # Limit number of notes if configured
-        if self.max_notes and len(rad_notes) > self.max_notes:
-            logger.info(f"{log_prefix} Limiting imaging notes from {len(rad_notes)} to {self.max_notes}.")
-            rad_notes = rad_notes.head(self.max_notes)
-
-        if rad_notes.empty:
-            logger.warning(f"{log_prefix} No imaging reports found.")
-            return evidence
-
-        logger.info(f"{log_prefix} Processing {len(rad_notes)} imaging reports.")
-
-        try_llm = self.llm_client and self.llm_client.enabled
-        logger.info(f"{log_prefix} Method selection: LLM available={try_llm}")
-
-        extracted_with_llm = False
-        if try_llm:
-            try:
-                logger.info(f"{log_prefix} Attempting LLM extraction...")
-                findings = self._extract_with_llm(rad_notes)
-                evidence["imaging_findings"] = findings
-                evidence["metadata"]["extraction_mode"] = "llm"
-                extracted_with_llm = True
-                logger.info(
-                    f"{log_prefix} LLM extraction successful: {len(findings)} findings"
-                )
-
-                # Log detailed LLM results
-                if findings:
-                    logger.debug(f"{log_prefix} LLM Imaging Results:")
-                    mi_related_count = sum(
-                        1 for f in findings if f.get("mi_related", False)
-                    )
-                    new_findings_count = sum(
-                        1 for f in findings if f.get("is_new", False)
-                    )
-                    logger.debug(f"{log_prefix}   Total findings: {len(findings)}")
-                    logger.debug(
-                        f"{log_prefix}   MI-related findings: {mi_related_count}"
-                    )
-                    logger.debug(
-                        f"{log_prefix}   New/acute findings: {new_findings_count}"
-                    )
-
-                    for i, finding in enumerate(findings[:3], 1):  # Log first 3
-                        logger.debug(
-                            f"{log_prefix}     {i}. {finding.get('finding', 'unknown')}"
-                        )
-                        logger.debug(
-                            f"{log_prefix}        MI-related: {finding.get('mi_related', 'N/A')}"
-                        )
-                        logger.debug(
-                            f"{log_prefix}        Is new: {finding.get('is_new', 'N/A')}"
-                        )
-                        logger.debug(
-                            f"{log_prefix}        Context snippet: {finding.get('context', 'N/A')[:80]}..."
-                        )
-                else:
-                    logger.debug(f"{log_prefix}   LLM extracted no imaging findings")
-            except Exception as e:
-                logger.warning(
-                    f"{log_prefix} LLM extraction failed: {str(e)}, falling back to regex"
-                )
-
-        if not extracted_with_llm:
-            evidence["metadata"]["extraction_mode"] = (
-                "regex_fallback" if self.llm_client else "regex"
-            )
-            logger.info(f"{log_prefix} Using regex extraction")
-            findings = self._extract_with_regex(rad_notes)
-            evidence["imaging_findings"] = findings
-            logger.info(
-                f"{log_prefix} Regex extraction complete: {len(findings)} findings"
-            )
-
-        # Log detailed imaging evidence found
         if findings:
-            logger.info(f"{log_prefix} Imaging evidence found:")
-            for i, finding in enumerate(findings[:3], 1):  # Log first 3 findings
-                logger.info(f"{log_prefix}   {i}. {finding.get('finding', 'unknown')}")
-                logger.debug(
-                    f"{log_prefix}      New/Acute: {finding.get('is_new', 'N/A')}"
-                )
-                logger.debug(
-                    f"{log_prefix}      MI-Related: {finding.get('mi_related', 'N/A')}"
-                )
-                logger.debug(
-                    f"{log_prefix}      Context: {finding.get('context', 'N/A')[:100]}..."
-                )
-        else:
-            logger.info(f"{log_prefix} No imaging findings detected")
+            logger.info(f"{log_prefix} Found {len(findings)} imaging-related findings.")
+            logger.debug(f"{log_prefix} Details: {findings}")
 
-        # Add a summary flag for the rule engine
-        evidence["wall_motion_abnormalities"] = any(
-            f["mi_related"] for f in evidence["imaging_findings"]
-        )
-
+        evidence["imaging_findings"] = findings
         return evidence
-
-    def _extract_with_llm(self, notes: Any) -> List[Dict[str, Any]]:
-        """Use LLM to extract imaging findings."""
-        instructions = (
-            "Read the imaging report and extract findings of new or presumed new loss of viable myocardium or regional "
-            "wall motion abnormality. Return a JSON object with a key 'imaging_findings', a list of objects. "
-            "Each object should have 'finding' (e.g., 'Wall Motion Abnormality'), 'context', and 'is_new' (boolean)."
-        )
-        findings = []
-        for _, note in notes.iterrows():
-            text = str(note.get("text", ""))
-            if not text.strip():
-                continue
-            data = self.llm_client.extract_json(instructions, text)
-            for f in data.get("imaging_findings", []) or []:
-                if f.get("is_new"):
-                    findings.append(
-                        {
-                            "finding": f.get("finding"),
-                            "context": f.get("context"),
-                            "is_new": True,
-                            "mi_related": True,
-                            "charttime": note.get("charttime"),
-                        }
-                    )
-        return findings
-
-    def _extract_with_regex(self, notes: Any) -> List[Dict[str, Any]]:
-        """Use regex to extract imaging findings."""
-        findings = []
-        for _, note in notes.iterrows():
-            text = note.get("text", "")
-            for pattern_info in self.IMAGING_PATTERNS:
-                for match in pattern_info["pattern"].finditer(text):
-                    # Simple check for 'new' or 'acute' in context
-                    context = text[
-                        max(0, match.start() - 100) : min(len(text), match.end() + 100)
-                    ]
-                    if re.search(r"\b(new|acute|worsening)\b", context, re.IGNORECASE):
-                        findings.append(
-                            {
-                                "finding": pattern_info["name"],
-                                "context": context.strip(),
-                                "is_new": True,
-                                "mi_related": True,
-                                "charttime": note.get("charttime"),
-                            }
-                        )
-                        break  # Move to next note after first new finding
-        return findings

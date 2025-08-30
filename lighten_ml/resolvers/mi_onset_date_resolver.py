@@ -74,10 +74,7 @@ class MIOnsetDateResolver:
 
             logger.info(f"[{hadm_id}] [COMPLETE] MI ONSET DATE EXTRACTION COMPLETE")
             logger.info(
-                f"[{hadm_id}] [DATE] Final MI Onset Date: {final_result.get('onset_date', 'Not determined')}"
-            )
-            logger.info(
-                f"[{hadm_id}] [BASIS] Selection Basis: {final_result.get('selection_basis', 'N/A')}"
+                f"[{hadm_id}] [RESULT] Final Onset Date: {final_result.get('onset_date', 'Not determined')} (Basis: {final_result.get('selection_basis', 'N/A')})"
             )
 
             return final_result
@@ -186,28 +183,24 @@ Extract and analyze dates for each hierarchy level. For each level found, provid
 Analyze the documentation carefully and extract dates according to the clinical guideline hierarchy. Be precise and conservative - only extract dates that are clearly documented.
 """
 
-        logger.info("[LLM] MI ONSET DATE EXTRACTION - Sending prompt to LLM...")
+        logger.debug(f"[{hadm_id}] Sending prompt to LLM for onset date extraction.")
 
         try:
             response = self.llm_client.generate_response(prompt)
-            logger.info("[SUCCESS] LLM MI ONSET DATE EXTRACTION - Response received")
+            logger.debug(f"[{hadm_id}] Received LLM response.")
 
             # Parse JSON response
             result = json.loads(response)
-            logger.info(
-                "[SUCCESS] LLM MI ONSET DATE EXTRACTION - JSON parsed successfully"
-            )
+            logger.debug(f"[{hadm_id}] Successfully parsed LLM JSON response.")
 
             return result
 
         except json.JSONDecodeError as e:
-            logger.error(
-                f"[ERROR] LLM MI ONSET DATE EXTRACTION - JSON parsing failed: {e}"
-            )
-            logger.error(f"Raw LLM response: {response}")
+            logger.error(f"[{hadm_id}] [ERROR] Failed to parse LLM JSON response: {e}")
+            logger.debug(f"[{hadm_id}] Raw LLM response: {response}")
             raise
         except Exception as e:
-            logger.error(f"[ERROR] LLM MI ONSET DATE EXTRACTION - LLM call failed: {e}")
+            logger.error(f"[{hadm_id}] [ERROR] LLM query failed: {e}")
             raise
 
     def _prepare_troponin_summary(self, troponin_data: List[Dict]) -> str:
@@ -321,6 +314,11 @@ Analyze the documentation carefully and extract dates according to the clinical 
 
         hierarchy_analysis = processed_result.get("hierarchy_analysis", {})
 
+        # Augment hierarchy with programmatically determined dates as fallbacks
+        self._augment_with_structured_dates(
+            hierarchy_analysis, processed_result, hadm_id
+        )
+
         if not hierarchy_analysis:
             logger.warning(
                 f"[{hadm_id}] [WARNING] No valid dates found in hierarchy analysis"
@@ -338,43 +336,63 @@ Analyze the documentation carefully and extract dates according to the clinical 
             hierarchy_analysis.items(), key=lambda x: x[1]["priority"]
         )
 
-        # Select the highest priority date with sufficient confidence
-        selected_level = None
-        selected_data = None
+        # Select the highest priority date
+        selected_level, selected_data = sorted_levels[0]
 
-        for level_name, level_data in sorted_levels:
-            confidence = level_data.get("confidence", 0.0)
-            if confidence >= 0.5:  # Minimum confidence threshold
-                selected_level = level_name
-                selected_data = level_data
-                break
+        logger.info(
+            f"[{hadm_id}] [SELECTED] Highest priority date found: {selected_data['date']} from {selected_level} (Source: {selected_data.get('source', 'llm')})"
+        )
 
-        if selected_level and selected_data:
-            logger.info(
-                f"[{hadm_id}] [SELECTED] SELECTED DATE: {selected_data['date']} from {selected_level}"
-            )
-            logger.info(
-                f"[{hadm_id}] [EVIDENCE] EVIDENCE: {selected_data.get('evidence', 'N/A')}"
-            )
+        return {
+            "onset_date": selected_data["date"],
+            "selection_basis": selected_level,
+            "confidence": selected_data["confidence"],
+            "evidence": selected_data.get("evidence", ""),
+            "time_info": selected_data.get("time_info", ""),
+            "hierarchy_analysis": hierarchy_analysis,
+            "validation_notes": processed_result.get("validation_notes", []),
+            "llm_analysis_notes": processed_result.get("llm_analysis_notes", ""),
+        }
 
-            return {
-                "onset_date": selected_data["date"],
-                "selection_basis": selected_level,
-                "confidence": selected_data["confidence"],
-                "evidence": selected_data.get("evidence", ""),
-                "time_info": selected_data.get("time_info", ""),
-                "hierarchy_analysis": hierarchy_analysis,
-                "validation_notes": processed_result.get("validation_notes", []),
-                "llm_analysis_notes": processed_result.get("llm_analysis_notes", ""),
-            }
-        else:
-            logger.warning(
-                f"[{hadm_id}] [WARNING] No dates met minimum confidence threshold (0.5)"
+    def _augment_with_structured_dates(
+        self, hierarchy: Dict, processed_result: Dict, hadm_id: str
+    ) -> None:
+        """Augment the hierarchy with dates from structured data if not found by LLM."""
+
+        # Fallback for First Elevated Troponin
+        if "first_elevated_troponin" not in hierarchy:
+            troponin_data = processed_result.get("troponin_data", [])
+            first_elevated = next(
+                (t for t in troponin_data if t.get("above_threshold")), None
             )
-            return {
-                "onset_date": None,
-                "selection_basis": "insufficient_confidence",
-                "confidence": 0.0,
-                "hierarchy_analysis": hierarchy_analysis,
-                "validation_notes": processed_result.get("validation_notes", []),
-            }
+            if first_elevated and first_elevated.get("charttime"):
+                date_obj = first_elevated["charttime"]
+                hierarchy["first_elevated_troponin"] = {
+                    "date": date_obj.strftime("%m/%d/%Y"),
+                    "priority": self.DATE_HIERARCHY["first_elevated_troponin"],
+                    "evidence": "First elevated troponin from structured lab data.",
+                    "confidence": 1.0,  # High confidence for structured data
+                    "time_info": date_obj.strftime("%H:%M:%S"),
+                    "validated": True,
+                    "source": "structured",
+                }
+                logger.info(
+                    f"[{hadm_id}] [FALLBACK] Added first_elevated_troponin from structured data."
+                )
+
+        # Fallback for Hospital Presentation
+        if "hospital_presentation" not in hierarchy:
+            admission_date_str = processed_result.get("admission_date")
+            if admission_date_str:
+                hierarchy["hospital_presentation"] = {
+                    "date": admission_date_str,
+                    "priority": self.DATE_HIERARCHY["hospital_presentation"],
+                    "evidence": "Hospital admission date from structured data.",
+                    "confidence": 1.0,
+                    "time_info": "",
+                    "validated": True,
+                    "source": "structured",
+                }
+                logger.info(
+                    f"[{hadm_id}] [FALLBACK] Added hospital_presentation from structured data."
+                )

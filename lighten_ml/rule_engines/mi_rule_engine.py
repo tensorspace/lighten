@@ -100,30 +100,45 @@ class MIRuleEngine(BaseRuleEngine[MIRuleEngineConfig]):
         evidence_items = []
 
         # Evaluate Criteria A: Biomarker evidence
-        logger.info("[RULE_ENGINE] [CRITERIA_A] Evaluating biomarker evidence (Troponin)...")
+        logger.info(
+            "[RULE_ENGINE] [CRITERIA_A] Evaluating biomarker evidence (Troponin)..."
+        )
         a_result = self._evaluate_criteria_a(evidence.get("troponin", {}))
         criteria_met["A"] = a_result["met"]
         details["criteria_A"] = a_result["details"]
         evidence_items.extend(a_result.get("evidence", []))
-        logger.info(f"[RULE_ENGINE] [CRITERIA_A] Result: {'MET' if criteria_met['A'] else 'NOT MET'}")
+        logger.info(
+            f"[RULE_ENGINE] [CRITERIA_A] Result: {'MET' if criteria_met['A'] else 'NOT MET'}"
+        )
 
         # Early termination if Criteria A is not met
         if not criteria_met["A"]:
-            logger.info("[RULE_ENGINE] Criteria A not met. Final diagnosis is NEGATIVE.")
-            details["criteria_B"] = {"met": False, "reason": "Not evaluated as Criteria A was not met."}
+            logger.info(
+                "[RULE_ENGINE] Criteria A not met. Final diagnosis is NEGATIVE."
+            )
+            details["criteria_B"] = {
+                "met": False,
+                "reason": "Not evaluated as Criteria A was not met.",
+            }
         else:
             # Evaluate Criteria B: Ischemia evidence
-            logger.info("[RULE_ENGINE] [CRITERIA_B] Criteria A met. Evaluating clinical evidence for ischemia...")
+            logger.info(
+                "[RULE_ENGINE] [CRITERIA_B] Criteria A met. Evaluating clinical evidence for ischemia..."
+            )
             b_result = self._evaluate_criteria_b(evidence)
             criteria_met["B"] = b_result["met"]
             details["criteria_B"] = b_result["details"]
             evidence_items.extend(b_result.get("evidence", []))
-            logger.info(f"[RULE_ENGINE] [CRITERIA_B] Result: {'MET' if criteria_met['B'] else 'NOT MET'}")
+            logger.info(
+                f"[RULE_ENGINE] [CRITERIA_B] Result: {'MET' if criteria_met['B'] else 'NOT MET'}"
+            )
 
         # Determine overall result
         passed = criteria_met["A"] and criteria_met["B"]
 
-        logger.info(f"[RULE_ENGINE] === MI Diagnosis Evaluation Complete: {'POSITIVE' if passed else 'NEGATIVE'} ===")
+        logger.info(
+            f"[RULE_ENGINE] === MI Diagnosis Evaluation Complete: {'POSITIVE' if passed else 'NEGATIVE'} ==="
+        )
 
         return RuleResult(
             passed=passed,
@@ -134,14 +149,20 @@ class MIRuleEngine(BaseRuleEngine[MIRuleEngineConfig]):
 
     def evaluate_criteria_a(self, troponin_evidence: Dict[str, Any]) -> Dict[str, Any]:
         """Public method to evaluate only Criteria A (Troponin Biomarkers)."""
-        logger.info("[RULE_ENGINE] [CRITERIA_A_ONLY] Evaluating biomarker evidence (Troponin)...")
+        logger.info(
+            "[RULE_ENGINE] [CRITERIA_A_ONLY] Evaluating biomarker evidence (Troponin)..."
+        )
         result = self._evaluate_criteria_a(troponin_evidence)
-        logger.info(f"[RULE_ENGINE] [CRITERIA_A_ONLY] Result: {'MET' if result['met'] else 'NOT MET'}")
+        logger.info(
+            f"[RULE_ENGINE] [CRITERIA_A_ONLY] Result: {'MET' if result['met'] else 'NOT MET'}"
+        )
         return result
 
     def _evaluate_criteria_a(self, troponin_evidence: Dict[str, Any]) -> Dict[str, Any]:
         """Evaluate Criteria A: Rise and/or fall of troponin."""
-        if not troponin_evidence or not troponin_evidence.get("troponin_available", False):
+        if not troponin_evidence or not troponin_evidence.get(
+            "troponin_available", False
+        ):
             return {"met": False, "details": "No troponin data available."}
 
         tests = troponin_evidence.get("troponin_tests", [])
@@ -204,4 +225,7 @@ class MIRuleEngine(BaseRuleEngine[MIRuleEngineConfig]):
                 "evidence": ischemia_evidence_found,
             }
         else:
-            return {"met": False, "details": "No clinical evidence of myocardial ischemia found."}
+            return {
+                "met": False,
+                "details": "No clinical evidence of myocardial ischemia found.",
+            }

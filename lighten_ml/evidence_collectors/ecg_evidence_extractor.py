@@ -142,11 +142,15 @@ class ECGEvidenceExtractor(BaseEvidenceCollector):
 
         # Filter for ECG notes
         ecg_notes = notes[notes["note_type"] == "ECG"]
-        logger.info(f"{log_prefix} Found {len(ecg_notes)} ECG reports out of {len(notes)} total notes.")
+        logger.info(
+            f"{log_prefix} Found {len(ecg_notes)} ECG reports out of {len(notes)} total notes."
+        )
 
         # Limit number of notes if configured
         if self.max_notes and len(ecg_notes) > self.max_notes:
-            logger.info(f"{log_prefix} Limiting ECG notes from {len(ecg_notes)} to {self.max_notes}.")
+            logger.info(
+                f"{log_prefix} Limiting ECG notes from {len(ecg_notes)} to {self.max_notes}."
+            )
             ecg_notes = ecg_notes.head(self.max_notes)
 
         if ecg_notes.empty:
@@ -348,6 +352,22 @@ class ECGEvidenceExtractor(BaseEvidenceCollector):
                     return False, {
                         "reason": f'T wave inversion of {value}mm is below threshold of {thresholds["mm"]}mm.'
                     }
+
+        # Rule 4: T wave inversion must have prominent R wave or R/S ratio > 1
+        if finding_name == "T Wave Inversion":
+            context = finding.get("context", "")
+            if not re.search(r"prominent R wave|R/S ratio > 1", context, re.IGNORECASE):
+                return False, {
+                    "reason": "T wave inversion lacks required context (prominent R wave or R/S > 1)."
+                }
+
+        # Rule 5: Pathologic Q waves must be >= 0.02s in duration
+        if finding_name == "Pathologic Q Waves":
+            duration = measurements.get("q_wave_duration_ms")
+            if duration is None or duration < 20:
+                return False, {
+                    "reason": f"Pathologic Q wave duration of {duration}ms is below threshold of 20ms."
+                }
 
         return True, {"status": "Validated"}
 

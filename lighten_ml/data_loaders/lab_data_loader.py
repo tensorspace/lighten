@@ -330,7 +330,8 @@ class LabDataLoader(BaseDataLoader):
 
         # Filter by patient and itemids first
         patient_data = self.data[
-            (self.data["subject_id"] == patient_id) & (self.data["itemid"].isin(itemids))
+            (self.data["subject_id"] == patient_id)
+            & (self.data["itemid"].isin(itemids))
         ].copy()
 
         # Optionally filter by admission
@@ -344,7 +345,9 @@ class LabDataLoader(BaseDataLoader):
         if not tests.empty:
             values = tests["valuenum"].dropna()
             if not values.empty:
-                logger.debug(f"{log_prefix} Value range: min={values.min():.4f}, max={values.max():.4f}")
+                logger.debug(
+                    f"{log_prefix} Value range: min={values.min():.4f}, max={values.max():.4f}"
+                )
 
         # Sort by charttime for chronological order
         if not tests.empty and "charttime" in tests.columns:
@@ -352,7 +355,9 @@ class LabDataLoader(BaseDataLoader):
 
         return tests
 
-    def get_troponin_tests(self, patient_id: str, hadm_id: Optional[str] = None) -> pd.DataFrame:
+    def get_troponin_tests(
+        self, patient_id: str, hadm_id: Optional[str] = None
+    ) -> pd.DataFrame:
         """Get all Troponin T tests for a patient.
 
         Args:
@@ -375,9 +380,13 @@ class LabDataLoader(BaseDataLoader):
         Returns:
             DataFrame containing all Troponin T tests for the patient.
         """
-        logger.info(f"[{patient_id}] [LAB_LOADER] Fetching complete troponin history...")
+        logger.info(
+            f"[{patient_id}] [LAB_LOADER] Fetching complete troponin history..."
+        )
         troponin_history = self.get_troponin_tests(patient_id, hadm_id=None)
-        logger.info(f"[{patient_id}] [LAB_LOADER] Found {len(troponin_history)} total troponin records.")
+        logger.info(
+            f"[{patient_id}] [LAB_LOADER] Found {len(troponin_history)} total troponin records."
+        )
         return troponin_history
 
     def get_lab_test_info(self, itemid: int) -> Optional[Dict[str, str]]:
@@ -647,15 +656,11 @@ class LabDataLoader(BaseDataLoader):
             self.load_data()
 
         # Get all lab tests for this patient
-        logger.debug(
-            f"[{patient_id}] [DEBUG] Filtering lab data for patient"
-        )
+        logger.debug(f"[{patient_id}] [DEBUG] Filtering lab data for patient")
         patient_data = self.data[self.data["subject_id"] == patient_id]
 
         if patient_data.empty:
-            logger.warning(
-                f"[{patient_id}] [WARNING] No lab data found for patient"
-            )
+            logger.warning(f"[{patient_id}] [WARNING] No lab data found for patient")
             logger.debug(
                 f"[{patient_id}] [DEBUG] Available patient IDs sample: {self.data['subject_id'].unique()[:5].tolist()}"
             )
@@ -684,9 +689,7 @@ class LabDataLoader(BaseDataLoader):
             return pd.DataFrame()
 
         # Sort chronologically by charttime
-        logger.debug(
-            f"[{patient_id}] [DEBUG] Sorting lab data chronologically"
-        )
+        logger.debug(f"[{patient_id}] [DEBUG] Sorting lab data chronologically")
         lab_data = lab_data.sort_values("charttime")
 
         # Generate statistics by itemid
@@ -704,13 +707,9 @@ class LabDataLoader(BaseDataLoader):
         # Log breakdown by itemid
         itemid_counts = lab_data["itemid"].value_counts()
         for itemid, count in itemid_counts.items():
-            logger.debug(
-                f"[{patient_id}] [DEBUG] ItemID {itemid}: {count} tests"
-            )
+            logger.debug(f"[{patient_id}] [DEBUG] ItemID {itemid}: {count} tests")
 
-        logger.debug(
-            f"[{patient_id}] [DEBUG] Lab history collection completed"
-        )
+        logger.debug(f"[{patient_id}] [DEBUG] Lab history collection completed")
         return lab_data
 
     def get_all_patient_ids(self) -> List[str]:

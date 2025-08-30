@@ -367,7 +367,9 @@ class OnsetDateResolver:
         high_troponins = [t for t in troponin_tests if t.get("above_threshold")]
 
         if not high_troponins:
-            logger.debug("[ONSET_RESOLVER] No high troponin tests available for date resolution.")
+            logger.debug(
+                "[ONSET_RESOLVER] No high troponin tests available for date resolution."
+            )
             return None
 
         # Timestamps can be in 'charttime' or 'storetime'
@@ -377,11 +379,15 @@ class OnsetDateResolver:
                 troponin_dates.append(t["charttime"])
 
         if not troponin_dates:
-            logger.debug("[ONSET_RESOLVER] High troponins found, but they lack charttime timestamps.")
+            logger.debug(
+                "[ONSET_RESOLVER] High troponins found, but they lack charttime timestamps."
+            )
             return None
 
         earliest_date = min(troponin_dates)
-        logger.debug(f"[ONSET_RESOLVER] Earliest high troponin date found: {earliest_date}")
+        logger.debug(
+            f"[ONSET_RESOLVER] Earliest high troponin date found: {earliest_date}"
+        )
         return earliest_date
 
     def _find_earliest_historical_troponin(
