@@ -105,7 +105,6 @@ class MIRuleEngine(BaseRuleEngine[MIRuleEngineConfig]):
             "B": False,  # Ischemia criteria
         }
 
-
         evidence_items = []
         details = {"criteria_A": {}, "criteria_B": {}}
 
@@ -116,9 +115,7 @@ class MIRuleEngine(BaseRuleEngine[MIRuleEngineConfig]):
         details["criteria_A"] = a_result["details"]
         evidence_items.extend(a_result.get("evidence", []))
 
-        logger.info(
-            f"[CRITERIA_A] Result: {'MET' if criteria_met['A'] else 'NOT MET'}"
-        )
+        logger.info(f"[CRITERIA_A] Result: {'MET' if criteria_met['A'] else 'NOT MET'}")
 
         # Early termination optimization: Skip Criteria B if A is not met
         # Clinical guideline requires BOTH A AND B, so no point evaluating B if A fails
