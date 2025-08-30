@@ -96,7 +96,11 @@ class ClinicalPipeline:
             time_window_hours=troponin_config.get("time_window_hours", 72)
         )
         self.clinical_evidence_extractor = ClinicalEvidenceExtractor()
-        self.ecg_evidence_extractor = ECGEvidenceExtractor()
+        self.ecg_evidence_extractor = ECGEvidenceExtractor(
+            notes_data_loader=self.notes_loader,
+            llm_client=self.llm_client,
+            max_notes=max_notes,
+        )
         self.imaging_evidence_extractor = ImagingEvidenceExtractor()
         self.angiography_evidence_extractor = AngiographyEvidenceExtractor()
 
