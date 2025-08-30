@@ -1,9 +1,12 @@
 """ECG evidence extractor for identifying MI-related ECG findings."""
 
+import logging
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from .base_evidence_collector import BaseEvidenceCollector
+
+logger = logging.getLogger(__name__)
 
 
 class ECGEvidenceExtractor(BaseEvidenceCollector):

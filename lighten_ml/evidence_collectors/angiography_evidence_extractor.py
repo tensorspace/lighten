@@ -1,9 +1,12 @@
 """Evidence extractor for angiography findings related to MI."""
 
+import logging
 import re
 from typing import Any, Dict, List, Optional
 
 from .base_evidence_collector import BaseEvidenceCollector
+
+logger = logging.getLogger(__name__)
 
 
 class AngiographyEvidenceExtractor(BaseEvidenceCollector):
