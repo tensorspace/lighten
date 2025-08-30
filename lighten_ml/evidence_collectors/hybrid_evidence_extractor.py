@@ -9,7 +9,7 @@ based on their needs, resources, and accuracy requirements.
 import logging
 import time
 from enum import Enum
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Optional
 
 from ..llm_client import LightenLLMClient
 from .clinical_evidence_extractor import ClinicalEvidenceExtractor

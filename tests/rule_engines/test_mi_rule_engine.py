@@ -1,5 +1,4 @@
 import unittest
-from datetime import datetime
 
 from lighten_ml.rule_engines.mi_rule_engine import MIRuleEngine, MIRuleEngineConfig
 

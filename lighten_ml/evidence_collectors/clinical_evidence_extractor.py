@@ -2,8 +2,7 @@
 
 import logging
 import re
-from datetime import datetime
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from ..llm_client import LightenLLMClient
 from .base_evidence_collector import BaseEvidenceCollector

@@ -2,9 +2,8 @@
 
 import logging
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
-import numpy as np
 from dateutil.parser import parse as date_parse
 
 from .base_evidence_collector import BaseEvidenceCollector

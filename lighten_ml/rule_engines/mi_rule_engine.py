@@ -1,9 +1,8 @@
 """Rule engine for Myocardial Infarction (MI) detection."""
 
 import logging
-from dataclasses import dataclass, field
-from datetime import datetime
-from typing import Any, Dict, List, Optional
+from dataclasses import dataclass
+from typing import Any, Dict, Optional
 
 from .base_rule_engine import BaseRuleEngine, RuleResult
 

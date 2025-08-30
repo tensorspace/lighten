@@ -9,9 +9,7 @@ import random
 import sys
 from pathlib import Path
 
-import pandas as pd
 from dotenv import load_dotenv
-from tqdm import tqdm
 
 # Add the project root to the Python path
 sys.path.append(str(Path(__file__).parent))

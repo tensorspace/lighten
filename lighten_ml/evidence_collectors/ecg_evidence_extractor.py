@@ -1,10 +1,8 @@
 """ECG evidence extractor for identifying MI-related ECG findings."""
 
 import re
-from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
-from ..llm_client import LightenLLMClient
 from .base_evidence_collector import BaseEvidenceCollector
 
 
