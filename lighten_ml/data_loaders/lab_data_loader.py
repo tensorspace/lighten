@@ -291,7 +291,7 @@ class LabDataLoader(BaseDataLoader):
             )
 
             # Log some example mappings for key tests
-            troponin_itemids = [51003, 52642, 51002]  # Known troponin itemids
+            troponin_itemids = [51003]  # Troponin T ONLY - clinical guideline compliance
             for itemid in troponin_itemids:
                 if itemid in self._itemid_to_label_map:
                     mapping = self._itemid_to_label_map[itemid]

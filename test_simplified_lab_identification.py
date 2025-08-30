@@ -41,12 +41,10 @@ def test_simplified_lab_identification():
 
             # Show some example mappings
             example_itemids = [
-                51003,
-                52642,
-                51002,
+                51003,  # Troponin T ONLY - clinical guideline compliance
                 50809,
                 50931,
-            ]  # Troponin and glucose examples
+            ]  # Troponin T and glucose examples
             for itemid in example_itemids:
                 info = lab_loader.get_lab_test_info(itemid)
                 if info:
