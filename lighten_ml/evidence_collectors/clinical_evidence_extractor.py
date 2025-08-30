@@ -240,22 +240,30 @@ class ClinicalEvidenceExtractor(BaseEvidenceCollector):
                 logger.info(
                     f"[{hadm_id}] CLINICAL EXTRACTION - LLM extraction successful: {len(symptoms)} symptoms, {len(diagnoses)} diagnoses"
                 )
-                
+
                 # Log detailed LLM results
                 logger.info(f"[{hadm_id}] LLM CLINICAL RESULTS:")
                 if symptoms:
                     logger.info(f"[{hadm_id}]   LLM Symptoms extracted:")
                     for i, symptom in enumerate(symptoms[:3], 1):  # Log first 3
-                        logger.info(f"[{hadm_id}]     {i}. {symptom.get('name', 'unknown')} (conf: {symptom.get('confidence', 'N/A')})")
-                        logger.info(f"[{hadm_id}]        MI-related: {symptom.get('mi_related', 'N/A')}")
-                        logger.info(f"[{hadm_id}]        Context snippet: {symptom.get('context', 'N/A')[:80]}...")
+                        logger.info(
+                            f"[{hadm_id}]     {i}. {symptom.get('name', 'unknown')} (conf: {symptom.get('confidence', 'N/A')})"
+                        )
+                        logger.info(
+                            f"[{hadm_id}]        MI-related: {symptom.get('mi_related', 'N/A')}"
+                        )
+                        logger.info(
+                            f"[{hadm_id}]        Context snippet: {symptom.get('context', 'N/A')[:80]}..."
+                        )
                 else:
                     logger.info(f"[{hadm_id}]   LLM extracted no symptoms")
-                
+
                 if diagnoses:
                     logger.info(f"[{hadm_id}]   LLM Diagnoses extracted:")
                     for i, diagnosis in enumerate(diagnoses[:3], 1):  # Log first 3
-                        logger.info(f"[{hadm_id}]     {i}. {diagnosis.get('name', 'unknown')} (conf: {diagnosis.get('confidence', 'N/A')})")
+                        logger.info(
+                            f"[{hadm_id}]     {i}. {diagnosis.get('name', 'unknown')} (conf: {diagnosis.get('confidence', 'N/A')})"
+                        )
                 else:
                     logger.info(f"[{hadm_id}]   LLM extracted no diagnoses")
             except Exception as e:

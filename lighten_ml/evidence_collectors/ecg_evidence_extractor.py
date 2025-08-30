@@ -166,22 +166,40 @@ class ECGEvidenceExtractor(BaseEvidenceCollector):
                 logger.info(
                     f"[{hadm_id}] ECG EXTRACTION - LLM extraction successful: {len(ecg_findings)} findings"
                 )
-                
+
                 # Log detailed LLM results
                 logger.info(f"[{hadm_id}] LLM ECG RESULTS:")
-                logger.info(f"[{hadm_id}]   Raw LLM findings: {len(llm_findings)} items")
-                logger.info(f"[{hadm_id}]   Post-processed findings: {len(ecg_findings)} items")
-                
+                logger.info(
+                    f"[{hadm_id}]   Raw LLM findings: {len(llm_findings)} items"
+                )
+                logger.info(
+                    f"[{hadm_id}]   Post-processed findings: {len(ecg_findings)} items"
+                )
+
                 if ecg_findings:
-                    mi_related_count = sum(1 for f in ecg_findings if f.get('mi_related', False))
-                    logger.info(f"[{hadm_id}]   MI-related ECG findings: {mi_related_count}/{len(ecg_findings)}")
-                    
+                    mi_related_count = sum(
+                        1 for f in ecg_findings if f.get("mi_related", False)
+                    )
+                    logger.info(
+                        f"[{hadm_id}]   MI-related ECG findings: {mi_related_count}/{len(ecg_findings)}"
+                    )
+
                     for i, finding in enumerate(ecg_findings[:3], 1):  # Log first 3
-                        logger.info(f"[{hadm_id}]     {i}. {finding.get('finding', 'unknown')}")
-                        logger.info(f"[{hadm_id}]        Leads: {finding.get('leads', 'N/A')}")
-                        logger.info(f"[{hadm_id}]        MI-related: {finding.get('mi_related', 'N/A')}")
-                        logger.info(f"[{hadm_id}]        Is new: {finding.get('is_new', 'N/A')}")
-                        logger.info(f"[{hadm_id}]        Confidence: {finding.get('confidence', 'N/A')}")
+                        logger.info(
+                            f"[{hadm_id}]     {i}. {finding.get('finding', 'unknown')}"
+                        )
+                        logger.info(
+                            f"[{hadm_id}]        Leads: {finding.get('leads', 'N/A')}"
+                        )
+                        logger.info(
+                            f"[{hadm_id}]        MI-related: {finding.get('mi_related', 'N/A')}"
+                        )
+                        logger.info(
+                            f"[{hadm_id}]        Is new: {finding.get('is_new', 'N/A')}"
+                        )
+                        logger.info(
+                            f"[{hadm_id}]        Confidence: {finding.get('confidence', 'N/A')}"
+                        )
                 else:
                     logger.info(f"[{hadm_id}]   LLM extracted no ECG findings")
             except Exception as e:
