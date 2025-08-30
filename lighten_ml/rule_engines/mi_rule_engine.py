@@ -111,18 +111,52 @@ class MIRuleEngine(BaseRuleEngine[MIRuleEngineConfig]):
         details = {"criteria_A": {}, "criteria_B": {}}
 
         # Evaluate Criteria A: Biomarker evidence
+        logger.info("[CRITERIA_A] Starting biomarker evidence evaluation...")
         a_result = self._evaluate_criteria_a(evidence.get("troponin", {}))
         criteria_met["A"] = a_result["met"]
         confidence["A"] = a_result["confidence"]
         details["criteria_A"] = a_result["details"]
         evidence_items.extend(a_result.get("evidence", []))
 
-        # Evaluate Criteria B: Ischemia evidence
-        b_result = self._evaluate_criteria_b(evidence)
-        criteria_met["B"] = b_result["met"]
-        confidence["B"] = b_result["confidence"]
-        details["criteria_B"] = b_result["details"]
-        evidence_items.extend(b_result.get("evidence", []))
+        logger.info(
+            f"[CRITERIA_A] Result: {'MET' if criteria_met['A'] else 'NOT MET'} (confidence: {confidence['A']:.3f})"
+        )
+
+        # Early termination optimization: Skip Criteria B if A is not met
+        # Clinical guideline requires BOTH A AND B, so no point evaluating B if A fails
+        if not criteria_met["A"]:
+            logger.info(
+                "[EARLY_TERMINATION] Criteria A not met - skipping Criteria B evaluation"
+            )
+            logger.info(
+                "[PERFORMANCE] Computational resources saved by early termination"
+            )
+            logger.info(
+                "[CLINICAL_GUIDELINE] Both A AND B required - early exit when A fails"
+            )
+
+            # Set default values for criteria B (not evaluated)
+            criteria_met["B"] = False
+            confidence["B"] = 0.0
+            details["criteria_B"] = {
+                "reason": "Not evaluated - Criteria A failed",
+                "early_termination": True,
+                "performance_optimization": "Skipped expensive ischemia analysis",
+            }
+        else:
+            # Evaluate Criteria B: Ischemia evidence (only if A is met)
+            logger.info(
+                "[CRITERIA_B] Criteria A met - proceeding to evaluate ischemia evidence..."
+            )
+            b_result = self._evaluate_criteria_b(evidence)
+            criteria_met["B"] = b_result["met"]
+            confidence["B"] = b_result["confidence"]
+            details["criteria_B"] = b_result["details"]
+            evidence_items.extend(b_result.get("evidence", []))
+
+            logger.info(
+                f"[CRITERIA_B] Result: {'MET' if criteria_met['B'] else 'NOT MET'} (confidence: {confidence['B']:.3f})"
+            )
 
         # Determine overall result
         # Special handling for single elevated troponin: requires ischemia evidence
