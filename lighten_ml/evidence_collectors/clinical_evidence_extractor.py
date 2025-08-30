@@ -247,7 +247,7 @@ class ClinicalEvidenceExtractor(BaseEvidenceCollector):
                     logger.info(f"[{hadm_id}]   LLM Symptoms extracted:")
                     for i, symptom in enumerate(symptoms[:3], 1):  # Log first 3
                         logger.info(
-                            f"[{hadm_id}]     {i}. {symptom.get('name', 'unknown')} (conf: {symptom.get('confidence', 'N/A')})"
+                            f"[{hadm_id}]     {i}. {symptom.get('symptom', 'unknown')} (onset: {symptom.get('onset_time', 'N/A')})"
                         )
                         logger.info(
                             f"[{hadm_id}]        MI-related: {symptom.get('mi_related', 'N/A')}"
@@ -262,7 +262,7 @@ class ClinicalEvidenceExtractor(BaseEvidenceCollector):
                     logger.info(f"[{hadm_id}]   LLM Diagnoses extracted:")
                     for i, diagnosis in enumerate(diagnoses[:3], 1):  # Log first 3
                         logger.info(
-                            f"[{hadm_id}]     {i}. {diagnosis.get('name', 'unknown')} (conf: {diagnosis.get('confidence', 'N/A')})"
+                            f"[{hadm_id}]     {i}. {diagnosis.get('diagnosis', 'unknown')} (date: {diagnosis.get('diagnosis_date', 'N/A')})"
                         )
                 else:
                     logger.info(f"[{hadm_id}]   LLM extracted no diagnoses")
@@ -290,7 +290,7 @@ class ClinicalEvidenceExtractor(BaseEvidenceCollector):
             logger.info(f"[{hadm_id}] CLINICAL EVIDENCE FOUND:")
             for i, symptom in enumerate(symptoms[:5], 1):  # Log first 5 symptoms
                 logger.info(
-                    f"[{hadm_id}]   {i}. {symptom.get('name', 'unknown')} (confidence: {symptom.get('confidence', 'N/A')})"
+                    f"[{hadm_id}]   {i}. {symptom.get('symptom', 'unknown')} (onset: {symptom.get('onset_time', 'N/A')})"
                 )
                 logger.info(
                     f"[{hadm_id}]      Context: {symptom.get('context', 'N/A')[:100]}..."
