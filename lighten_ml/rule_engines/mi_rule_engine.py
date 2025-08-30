@@ -68,7 +68,19 @@ class MIRuleEngineConfig:
     consider_angiographic_evidence: bool = True
 
 class MIRuleEngine(BaseRuleEngine[MIRuleEngineConfig]):
-    """Rule engine for detecting Myocardial Infarction based on clinical evidence."""
+    """Rule engine for detecting Myocardial Infarction based on clinical evidence.
+    
+    Implements the 4th Universal Definition of Myocardial Infarction requiring:
+    - Criteria A: Detection of rise/fall of cardiac troponin with at least one value above diagnostic threshold
+    - Criteria B: At least ONE of 5 evidence types of myocardial ischemia:
+        1. Symptoms of myocardial ischemia
+        2. New ischemic ECG changes (ST elevation/depression, T wave inversion)
+        3. Development of pathological Q waves
+        4. Imaging evidence of new loss of viable myocardium or wall motion abnormality
+        5. Identification of intracoronary thrombus by angiography or autopsy
+    
+    Both Criteria A AND B must be met for MI diagnosis.
+    """
     
     def __init__(self, config: Optional[MIRuleEngineConfig] = None):
         """Initialize the MI Rule Engine.

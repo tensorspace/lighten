@@ -10,32 +10,32 @@ class ECGEvidenceExtractor(BaseEvidenceCollector):
     
     # ECG patterns indicative of MI
     ECG_PATTERNS = [
-        # ST elevation
+        # ST elevation (Criteria B.2 - New ischemic ECG changes)
         {
             'name': 'ST Elevation',
-            'pattern': re.compile(r'ST\s*(?:segment\s*)?elevat', re.IGNORECASE),
-            'criteria': 'New ST elevation ≥1mm in two contiguous leads',
+            'pattern': re.compile(r'(?:new\s+)?ST\s*(?:segment\s*)?elevat|STEMI', re.IGNORECASE),
+            'criteria': 'New ST elevation ≥1mm in two contiguous leads documented/interpreted by provider',
             'mi_related': True
         },
-        # ST depression
+        # ST depression (Criteria B.2 - New ischemic ECG changes)
         {
             'name': 'ST Depression',
-            'pattern': re.compile(r'ST\s*(?:segment\s*)?depress', re.IGNORECASE),
-            'criteria': 'New horizontal or down-sloping ST depression ≥0.5mm in two contiguous leads',
+            'pattern': re.compile(r'(?:new\s+)?ST\s*(?:segment\s*)?depress|(?:horizontal|down-sloping)\s+ST', re.IGNORECASE),
+            'criteria': 'New horizontal or down-sloping ST depression ≥0.5mm in two contiguous leads documented/interpreted by provider',
             'mi_related': True
         },
-        # T wave inversion
+        # T wave inversion (Criteria B.2 - New ischemic ECG changes)
         {
             'name': 'T Wave Inversion',
-            'pattern': re.compile(r'T\s*wave\s*inver', re.IGNORECASE),
-            'criteria': 'New T wave inversion ≥1mm in two contiguous leads with prominent R wave or R/S ratio >1',
+            'pattern': re.compile(r'(?:new\s+)?T\s*wave\s*inver|inverted\s+T\s+waves?', re.IGNORECASE),
+            'criteria': 'New T wave inversion ≥1mm in two contiguous leads with prominent R wave or R/S ratio >1 documented/interpreted by provider',
             'mi_related': True
         },
-        # Pathologic Q waves
+        # Pathologic Q waves (Criteria B.3 - Development of pathological Q waves)
         {
             'name': 'Pathologic Q Waves',
-            'pattern': re.compile(r'(?:new|pathologic)\s*q\s*waves?', re.IGNORECASE),
-            'criteria': 'New Q waves ≥0.02 seconds or QS complex in ≥2 contiguous leads',
+            'pattern': re.compile(r'(?:new|pathologic|abnormal|significant)\s*q\s*waves?|qs\s*complex', re.IGNORECASE),
+            'criteria': 'New Q waves ≥0.02 seconds or QS complex in ≥2 contiguous leads documented by provider',
             'mi_related': True
         },
         # Other ECG findings

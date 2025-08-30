@@ -11,22 +11,28 @@ logger = logging.getLogger(__name__)
 class ClinicalEvidenceExtractor(BaseEvidenceCollector):
     """Extracts clinical evidence of myocardial infarction from notes."""
     
-    # Keywords for MI-related symptoms and findings
+    # Keywords for MI-related symptoms and findings (Criteria B.1 - Symptoms of myocardial ischemia)
+    # Based on clinical guideline: chest pain, chest pressure, chest tightness, substernal discomfort, 
+    # burning sensation, left arm/jaw/back pain (anginal equivalents), dyspnea, diaphoresis, nausea/vomiting
     SYMPTOM_KEYWORDS = [
-        # Chest pain/discomfort
+        # Primary chest symptoms (per guideline)
         'chest pain', 'chest pressure', 'chest tightness',
-        'substernal pain', 'substernal pressure', 'substernal discomfort',
-        'chest heaviness', 'chest burning', 'angina',
+        'substernal discomfort', 'substernal pain', 'substernal pressure',
+        'burning sensation', 'chest burning', 'chest heaviness', 'angina',
         
-        # Radiation patterns
+        # Anginal equivalents (per guideline)
+        'left arm pain', 'jaw pain', 'back pain',
         'radiat.* arm', 'radiat.* jaw', 'radiat.* neck', 
         'radiat.* back', 'radiat.* shoulder',
         
-        # Associated symptoms
+        # Associated symptoms in appropriate clinical context (per guideline)
         'dyspnea', 'shortness of breath', 'sob', 'diaphoresis',
         'sweating', 'nausea', 'vomiting', 'lightheaded', 'dizzy',
         'syncope', 'palpitations', 'fatigue', 'weakness',
-        'indigestion', 'heartburn', 'epigastric pain'
+        'indigestion', 'heartburn', 'epigastric pain',
+        
+        # Additional clinical descriptors
+        'crushing chest pain', 'squeezing chest pain', 'pressure-like pain'
     ]
     
     # Regular expressions for symptom patterns
