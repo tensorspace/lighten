@@ -140,20 +140,49 @@ class TroponinAnalyzer(BaseEvidenceCollector):
                     logger.warning(f"No valid timestamp found in test record")
 
                 # Convert units if necessary (troponin threshold is in ng/mL)
+                logger.info(f"🧪 TROPONIN TEST PROCESSING: Test {len(processed)+1}")
+                logger.info(f"🧪 TROPONIN TEST: Raw value = {value} {unit}")
+                logger.info(f"🧪 TROPONIN TEST: Timestamp = {timestamp}")
+
                 converted_value, final_unit = convert_troponin_units(value, unit)
+
                 if converted_value != value:
+                    logger.info(f"🔄 TROPONIN TEST: Unit conversion applied")
                     logger.info(
-                        f"Converted troponin: {value} {unit} -> {converted_value} {final_unit}"
+                        f"🔄 TROPONIN TEST: {value} {unit} -> {converted_value} {final_unit}"
                     )
+                    conversion_factor = converted_value / value if value != 0 else 1
+                    logger.info(
+                        f"🔄 TROPONIN TEST: Conversion factor = {conversion_factor:.6f}"
+                    )
+                else:
+                    logger.info(f"✅ TROPONIN TEST: No unit conversion needed")
 
                 # Track maximum value (use converted value for comparison)
                 if converted_value > max_value:
                     max_value = converted_value
+                    logger.info(
+                        f"📈 TROPONIN TEST: New maximum value = {max_value:.6f} ng/mL"
+                    )
 
                 # Use unit-aware threshold comparison
+                logger.info(f"🎯 TROPONIN TEST: Performing threshold comparison...")
                 threshold_result = is_above_troponin_threshold(
                     value, unit, self.TROPONIN_THRESHOLD
                 )
+
+                # Log threshold comparison result
+                if threshold_result["above_threshold"]:
+                    logger.info(
+                        f"✅ TROPONIN TEST: ABOVE THRESHOLD - {threshold_result['converted_value']} > {self.TROPONIN_THRESHOLD} ng/mL"
+                    )
+                    logger.info(
+                        f"✅ TROPONIN TEST: Fold change = {threshold_result['fold_change']:.3f}x"
+                    )
+                else:
+                    logger.info(
+                        f"❌ TROPONIN TEST: BELOW THRESHOLD - {threshold_result['converted_value']} ≤ {self.TROPONIN_THRESHOLD} ng/mL"
+                    )
 
                 processed.append(
                     {

@@ -20,28 +20,59 @@ def convert_troponin_units(value: float, unit: str) -> tuple[float, str]:
     Returns:
         Tuple of (converted_value, final_unit)
     """
+    logger.info(f"🔄 UNIT CONVERSION START: {value} {unit}")
+
     if not unit or pd.isna(unit):
-        logger.warning(f"No unit provided for troponin value {value}, assuming ng/mL")
+        logger.warning(
+            f"⚠️ UNIT CONVERSION: No unit provided for troponin value {value}, assuming ng/mL"
+        )
+        logger.info(
+            f"✅ UNIT CONVERSION RESULT: {value} (no unit) -> {value} ng/mL (assumed)"
+        )
         return value, "ng/mL"
 
     unit_str = str(unit).strip()
+    logger.info(f"📋 UNIT CONVERSION: Processing {value} {unit_str}")
 
     # Quick check for already standard units
     if unit_str.lower() in ["ng/ml", "ng/dl", "nanogram/ml", "nanogram/dl"]:
+        logger.info(
+            f"✅ UNIT CONVERSION: Already in standard format - no conversion needed"
+        )
+        logger.info(
+            f"✅ UNIT CONVERSION RESULT: {value} {unit_str} -> {value} ng/mL (no change)"
+        )
         return value, "ng/mL"
 
     # Use LLM for intelligent unit conversion
+    logger.info(f"🤖 UNIT CONVERSION: Attempting LLM-based conversion...")
     try:
         converted_value, final_unit = _llm_convert_troponin_units(value, unit_str)
         if converted_value != value:
+            logger.info(f"🎯 UNIT CONVERSION: LLM conversion successful!")
             logger.info(
-                f"LLM converted troponin: {value} {unit_str} -> {converted_value} {final_unit}"
+                f"✅ UNIT CONVERSION RESULT: {value} {unit_str} -> {converted_value} {final_unit}"
+            )
+            logger.info(
+                f"📊 UNIT CONVERSION: Conversion factor: {converted_value/value:.6f}"
+            )
+        else:
+            logger.info(f"✅ UNIT CONVERSION: LLM determined no conversion needed")
+            logger.info(
+                f"✅ UNIT CONVERSION RESULT: {value} {unit_str} -> {converted_value} {final_unit}"
             )
         return converted_value, final_unit
     except Exception as e:
-        logger.warning(f"LLM conversion failed for {value} {unit_str}: {e}")
+        logger.warning(
+            f"❌ UNIT CONVERSION: LLM conversion failed for {value} {unit_str}: {e}"
+        )
+        logger.info(f"🔄 UNIT CONVERSION: Falling back to hard-coded conversion...")
         # Fallback to hard-coded conversion
-        return _fallback_convert_troponin_units(value, unit_str)
+        result = _fallback_convert_troponin_units(value, unit_str)
+        logger.info(
+            f"✅ UNIT CONVERSION RESULT: {value} {unit_str} -> {result[0]} {result[1]} (fallback)"
+        )
+        return result
 
 
 def _llm_convert_troponin_units(value: float, unit: str) -> tuple[float, str]:
@@ -80,29 +111,40 @@ Return your response as a JSON object with this exact format:
 If the unit is unrecognizable or cannot be converted, set converted_value to the original value and explain in the explanation field."""
 
     try:
+        logger.info(f"🤖 LLM CONVERSION: Sending prompt to LLM for {value} {unit}")
         response = llm_client.chat_completion([{"role": "user", "content": prompt}])
         response_text = response.strip()
+        logger.info(f"🤖 LLM CONVERSION: Received response from LLM")
 
         # Parse JSON response
         if response_text.startswith("```json"):
             response_text = (
                 response_text.replace("```json", "").replace("```", "").strip()
             )
+            logger.info(f"🤖 LLM CONVERSION: Cleaned JSON response format")
 
+        logger.info(f"🤖 LLM CONVERSION: Parsing JSON response...")
         result = json.loads(response_text)
 
         converted_value = float(result["converted_value"])
         final_unit = result["final_unit"]
         explanation = result.get("explanation", "")
+        conversion_factor = result.get("conversion_factor", "N/A")
 
-        logger.info(
-            f"LLM unit conversion: {value} {unit} -> {converted_value} {final_unit} ({explanation})"
-        )
+        logger.info(f"🎯 LLM CONVERSION SUCCESS:")
+        logger.info(f"  📊 Original: {value} {unit}")
+        logger.info(f"  📊 Converted: {converted_value} {final_unit}")
+        logger.info(f"  📊 Conversion factor: {conversion_factor}")
+        logger.info(f"  📊 Explanation: {explanation}")
 
         return converted_value, final_unit
 
+    except json.JSONDecodeError as e:
+        logger.error(f"❌ LLM CONVERSION: JSON parsing failed: {e}")
+        logger.error(f"❌ LLM CONVERSION: Raw response: {response_text}")
+        raise
     except Exception as e:
-        logger.error(f"Error in LLM unit conversion: {e}")
+        logger.error(f"❌ LLM CONVERSION: General error: {e}")
         raise
 
 
@@ -199,18 +241,53 @@ def is_above_troponin_threshold(
     Returns:
         Dictionary with threshold comparison results
     """
+    logger.info(f"🎯 THRESHOLD COMPARISON START: {value} {unit} vs {threshold} ng/mL")
+
+    # Convert to standard units for comparison
     converted_value, final_unit = convert_troponin_units(value, unit)
 
+    # Perform threshold comparison
     above_threshold = converted_value > threshold
+    difference = converted_value - threshold
+    fold_change = converted_value / threshold if threshold > 0 else float("inf")
 
-    return {
+    # Log detailed comparison results
+    logger.info(f"📊 THRESHOLD COMPARISON DETAILS:")
+    logger.info(f"  📋 Original value: {value} {unit}")
+    logger.info(f"  📋 Converted value: {converted_value} {final_unit}")
+    logger.info(f"  📋 Threshold: {threshold} ng/mL")
+    logger.info(f"  📋 Above threshold: {above_threshold}")
+    logger.info(f"  📋 Difference: {difference:+.6f} ng/mL")
+    logger.info(f"  📋 Fold change: {fold_change:.3f}x")
+
+    if above_threshold:
+        logger.info(
+            f"✅ THRESHOLD COMPARISON: VALUE EXCEEDS THRESHOLD ({converted_value:.6f} > {threshold})"
+        )
+        if fold_change >= 5.0:
+            logger.info(
+                f"🚨 THRESHOLD COMPARISON: SIGNIFICANTLY ELEVATED (≥5x threshold)"
+            )
+        elif fold_change >= 2.0:
+            logger.info(f"⚠️ THRESHOLD COMPARISON: MODERATELY ELEVATED (≥2x threshold)")
+        else:
+            logger.info(f"📈 THRESHOLD COMPARISON: MILDLY ELEVATED (>1x threshold)")
+    else:
+        logger.info(
+            f"❌ THRESHOLD COMPARISON: VALUE BELOW THRESHOLD ({converted_value:.6f} ≤ {threshold})"
+        )
+
+    result = {
         "original_value": f"{value} {unit}",
         "converted_value": f"{converted_value} {final_unit}",
         "threshold": f"{threshold} ng/mL",
         "above_threshold": above_threshold,
-        "difference_from_threshold": converted_value - threshold,
-        "fold_change": converted_value / threshold if threshold > 0 else float("inf"),
+        "difference_from_threshold": difference,
+        "fold_change": fold_change,
     }
+
+    logger.info(f"✅ THRESHOLD COMPARISON COMPLETE: {above_threshold}")
+    return result
 
 
 def get_supported_troponin_units() -> dict[str, str]:

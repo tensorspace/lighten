@@ -230,14 +230,27 @@ class MIRuleEngine(BaseRuleEngine[MIRuleEngineConfig]):
             f"CRITERIA A DEBUG - troponin_tests count: {len(troponin_evidence.get('troponin_tests', []))}"
         )
 
-        # Log individual troponin values for debugging
+        # Log individual troponin values for debugging with unit conversion details
         troponin_tests = troponin_evidence.get("troponin_tests", [])
         if troponin_tests:
-            logger.info(f"CRITERIA A DEBUG - Individual troponin values:")
+            logger.info(
+                f"CRITERIA A DEBUG - Individual troponin values with unit conversion:"
+            )
             for i, test in enumerate(troponin_tests[:5]):  # Log first 5 tests
-                logger.info(
-                    f"  Test {i+1}: value={test.get('value', 'N/A')}, timestamp={test.get('timestamp', 'N/A')}"
-                )
+                original_value = test.get("original_value", "N/A")
+                original_unit = test.get("original_unit", "N/A")
+                converted_value = test.get("value", "N/A")
+                converted_unit = test.get("unit", "N/A")
+                above_threshold = test.get("above_threshold", "N/A")
+                threshold_analysis = test.get("threshold_analysis", {})
+                fold_change = threshold_analysis.get("fold_change", "N/A")
+
+                logger.info(f"  🧪 Test {i+1}:")
+                logger.info(f"    📋 Original: {original_value} {original_unit}")
+                logger.info(f"    📋 Converted: {converted_value} {converted_unit}")
+                logger.info(f"    📋 Above threshold: {above_threshold}")
+                logger.info(f"    📋 Fold change: {fold_change}")
+                logger.info(f"    📋 Timestamp: {test.get('timestamp', 'N/A')}")
         else:
             logger.warning("CRITERIA A DEBUG - No troponin_tests found in evidence")
 
