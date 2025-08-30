@@ -167,28 +167,36 @@ class ClinicalPipeline:
             logger.info(f"[{hadm_id}] === EVIDENCE COLLECTION PHASE ===")
             evidence = self._collect_all_evidence(patient_id, hadm_id)
             result["evidence"] = evidence
-            
+
             # Log detailed evidence summary for decision traceability
             self._log_evidence_summary(hadm_id, evidence)
 
             # 2. Apply rule engine to evaluate MI
             logger.info(f"[{hadm_id}] === MI RULE ENGINE EVALUATION PHASE ===")
             rule_result = self.rule_engine.evaluate(evidence)
-            
+
             # Log comprehensive decision details
             logger.info(
                 f"[{hadm_id}] *** MI RULE ENGINE RESULT: {'PASSED' if rule_result.passed else 'FAILED'} ***"
             )
             logger.info(f"[{hadm_id}] DECISION RATIONALE: {rule_result.rationale}")
-            logger.info(f"[{hadm_id}] DECISION CONFIDENCE: {rule_result.confidence:.3f}")
-            
+            logger.info(
+                f"[{hadm_id}] DECISION CONFIDENCE: {rule_result.confidence:.3f}"
+            )
+
             # Log evidence items that contributed to the decision
             if rule_result.evidence:
                 logger.info(f"[{hadm_id}] CONTRIBUTING EVIDENCE:")
                 for i, evidence_item in enumerate(rule_result.evidence, 1):
-                    logger.info(f"[{hadm_id}]   {i}. {evidence_item.get('type', 'unknown')}: {evidence_item.get('description', 'N/A')}")
-                    logger.info(f"[{hadm_id}]      Significance: {evidence_item.get('significance', 'N/A')}")
-                    logger.info(f"[{hadm_id}]      Confidence: {evidence_item.get('confidence', 'N/A')}")
+                    logger.info(
+                        f"[{hadm_id}]   {i}. {evidence_item.get('type', 'unknown')}: {evidence_item.get('description', 'N/A')}"
+                    )
+                    logger.info(
+                        f"[{hadm_id}]      Significance: {evidence_item.get('significance', 'N/A')}"
+                    )
+                    logger.info(
+                        f"[{hadm_id}]      Confidence: {evidence_item.get('confidence', 'N/A')}"
+                    )
             else:
                 logger.info(f"[{hadm_id}] No contributing evidence items found")
 
@@ -537,54 +545,72 @@ class ClinicalPipeline:
     def _log_evidence_summary(self, hadm_id: str, evidence: Dict[str, Any]):
         """Log detailed evidence summary for decision traceability."""
         logger.info(f"[{hadm_id}] === EVIDENCE SUMMARY ===")
-        
+
         # Troponin Evidence
         troponin_evidence = evidence.get("troponin", {})
         if troponin_evidence.get("troponin_available", False):
             logger.info(f"[{hadm_id}] TROPONIN EVIDENCE:")
-            logger.info(f"[{hadm_id}]   Available: {troponin_evidence.get('troponin_available', False)}")
-            logger.info(f"[{hadm_id}]   Max Value: {troponin_evidence.get('max_troponin', 'N/A')}")
-            logger.info(f"[{hadm_id}]   Test Count: {len(troponin_evidence.get('troponin_tests', []))}")
-            logger.info(f"[{hadm_id}]   MI Criteria Met: {troponin_evidence.get('mi_criteria_met', False)}")
-            criteria_details = troponin_evidence.get('criteria_details', {})
+            logger.info(
+                f"[{hadm_id}]   Available: {troponin_evidence.get('troponin_available', False)}"
+            )
+            logger.info(
+                f"[{hadm_id}]   Max Value: {troponin_evidence.get('max_troponin', 'N/A')}"
+            )
+            logger.info(
+                f"[{hadm_id}]   Test Count: {len(troponin_evidence.get('troponin_tests', []))}"
+            )
+            logger.info(
+                f"[{hadm_id}]   MI Criteria Met: {troponin_evidence.get('mi_criteria_met', False)}"
+            )
+            criteria_details = troponin_evidence.get("criteria_details", {})
             if criteria_details:
-                logger.info(f"[{hadm_id}]   Criteria Details: {criteria_details.get('criteria', 'N/A')}")
+                logger.info(
+                    f"[{hadm_id}]   Criteria Details: {criteria_details.get('criteria', 'N/A')}"
+                )
         else:
             logger.info(f"[{hadm_id}] TROPONIN EVIDENCE: Not available")
-        
+
         # Clinical Symptoms Evidence
         symptoms = evidence.get("symptoms", [])
         logger.info(f"[{hadm_id}] CLINICAL SYMPTOMS:")
         logger.info(f"[{hadm_id}]   Total Symptoms: {len(symptoms)}")
         if symptoms:
-            high_conf_symptoms = [s for s in symptoms if s.get('confidence', 0) > 0.8]
-            logger.info(f"[{hadm_id}]   High Confidence Symptoms: {len(high_conf_symptoms)}")
-            symptom_names = [s.get('name', 'unknown') for s in symptoms[:5]]  # First 5
+            high_conf_symptoms = [s for s in symptoms if s.get("confidence", 0) > 0.8]
+            logger.info(
+                f"[{hadm_id}]   High Confidence Symptoms: {len(high_conf_symptoms)}"
+            )
+            symptom_names = [s.get("name", "unknown") for s in symptoms[:5]]  # First 5
             logger.info(f"[{hadm_id}]   Symptom Types: {symptom_names}")
-        
+
         # ECG Evidence
         ecg_evidence = evidence.get("ecg", {})
         ecg_findings = ecg_evidence.get("ecg_findings", [])
         logger.info(f"[{hadm_id}] ECG EVIDENCE:")
         logger.info(f"[{hadm_id}]   Total Findings: {len(ecg_findings)}")
         if ecg_findings:
-            mi_related_ecg = [f for f in ecg_findings if f.get('mi_related', False)]
+            mi_related_ecg = [f for f in ecg_findings if f.get("mi_related", False)]
             logger.info(f"[{hadm_id}]   MI-Related Findings: {len(mi_related_ecg)}")
-            finding_names = [f.get('finding', 'unknown') for f in mi_related_ecg[:3]]  # First 3
+            finding_names = [
+                f.get("finding", "unknown") for f in mi_related_ecg[:3]
+            ]  # First 3
             logger.info(f"[{hadm_id}]   Finding Types: {finding_names}")
-        
+
         # Imaging Evidence
         imaging_evidence = evidence.get("imaging", {})
         logger.info(f"[{hadm_id}] IMAGING EVIDENCE:")
-        logger.info(f"[{hadm_id}]   Wall Motion Abnormalities: {imaging_evidence.get('wall_motion_abnormalities', False)}")
+        logger.info(
+            f"[{hadm_id}]   Wall Motion Abnormalities: {imaging_evidence.get('wall_motion_abnormalities', False)}"
+        )
         imaging_findings = imaging_evidence.get("imaging_findings", [])
         logger.info(f"[{hadm_id}]   Imaging Findings: {len(imaging_findings)}")
-        
+
         # Angiography Evidence
         angio_evidence = evidence.get("angiography", {})
         logger.info(f"[{hadm_id}] ANGIOGRAPHY EVIDENCE:")
-        logger.info(f"[{hadm_id}]   Thrombus Present: {angio_evidence.get('thrombus_present', False)}")
+        logger.info(
+            f"[{hadm_id}]   Thrombus Present: {angio_evidence.get('thrombus_present', False)}"
+        )
         angio_findings = angio_evidence.get("angiography_findings", [])
         logger.info(f"[{hadm_id}]   Angiography Findings: {len(angio_findings)}")
-        
+
         logger.info(f"[{hadm_id}] === END EVIDENCE SUMMARY ===")

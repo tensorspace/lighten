@@ -23,22 +23,22 @@ def main():
 
     # Set up logging to file (overwrite on each run)
     log_file = "lighten_pipeline.log"
-    
+
     # Remove existing handlers to avoid duplicate logs
     for handler in logging.root.handlers[:]:
         logging.root.removeHandler(handler)
-    
+
     # Configure logging to write to file (mode='w' overwrites the file)
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(levelname)s - [%(name)s] - %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
         handlers=[
-            logging.FileHandler(log_file, mode='w'),  # File handler (overwrites)
-            logging.StreamHandler()  # Console handler (still show logs in terminal)
-        ]
+            logging.FileHandler(log_file, mode="w"),  # File handler (overwrites)
+            logging.StreamHandler(),  # Console handler (still show logs in terminal)
+        ],
     )
-    
+
     print(f"Logging to file: {log_file} (file will be overwritten on each run)")
     logging.info("=== LIGHTEN ML PIPELINE STARTED ===")
 

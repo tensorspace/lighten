@@ -53,19 +53,27 @@ class AngiographyEvidenceExtractor(BaseEvidenceCollector):
         if cath_notes.empty:
             return evidence
 
-        logger.info(f"[{hadm_id}] ANGIOGRAPHY EXTRACTION - Method selection: LLM available={self.llm_client and self.llm_client.enabled}")
-        
+        logger.info(
+            f"[{hadm_id}] ANGIOGRAPHY EXTRACTION - Method selection: LLM available={self.llm_client and self.llm_client.enabled}"
+        )
+
         extracted_with_llm = False
         if self.llm_client and self.llm_client.enabled:
             try:
-                logger.info(f"[{hadm_id}] ANGIOGRAPHY EXTRACTION - Attempting LLM extraction...")
+                logger.info(
+                    f"[{hadm_id}] ANGIOGRAPHY EXTRACTION - Attempting LLM extraction..."
+                )
                 findings = self._extract_with_llm(cath_notes)
                 evidence["angiography_findings"] = findings
                 evidence["metadata"]["extraction_mode"] = "llm"
                 extracted_with_llm = True
-                logger.info(f"[{hadm_id}] ANGIOGRAPHY EXTRACTION - LLM extraction successful: {len(findings)} findings")
+                logger.info(
+                    f"[{hadm_id}] ANGIOGRAPHY EXTRACTION - LLM extraction successful: {len(findings)} findings"
+                )
             except Exception as e:
-                logger.warning(f"[{hadm_id}] ANGIOGRAPHY EXTRACTION - LLM extraction failed: {str(e)}, falling back to regex")
+                logger.warning(
+                    f"[{hadm_id}] ANGIOGRAPHY EXTRACTION - LLM extraction failed: {str(e)}, falling back to regex"
+                )
 
         if not extracted_with_llm:
             evidence["metadata"]["extraction_mode"] = (
@@ -74,21 +82,33 @@ class AngiographyEvidenceExtractor(BaseEvidenceCollector):
             logger.info(f"[{hadm_id}] ANGIOGRAPHY EXTRACTION - Using regex extraction")
             findings = self._extract_with_regex(cath_notes)
             evidence["angiography_findings"] = findings
-            logger.info(f"[{hadm_id}] ANGIOGRAPHY EXTRACTION - Regex extraction complete: {len(findings)} findings")
+            logger.info(
+                f"[{hadm_id}] ANGIOGRAPHY EXTRACTION - Regex extraction complete: {len(findings)} findings"
+            )
 
         # Log detailed angiography evidence found
-        thrombus_findings = [f for f in findings if 'thrombus' in f.get('finding', '').lower()]
+        thrombus_findings = [
+            f for f in findings if "thrombus" in f.get("finding", "").lower()
+        ]
         if findings:
             logger.info(f"[{hadm_id}] ANGIOGRAPHY EVIDENCE FOUND:")
             for i, finding in enumerate(findings[:3], 1):  # Log first 3 findings
                 logger.info(f"[{hadm_id}]   {i}. {finding.get('finding', 'unknown')}")
                 logger.info(f"[{hadm_id}]      Vessel: {finding.get('vessel', 'N/A')}")
-                logger.info(f"[{hadm_id}]      MI-Related: {finding.get('mi_related', 'N/A')}")
-                logger.info(f"[{hadm_id}]      Context: {finding.get('context', 'N/A')[:100]}...")
+                logger.info(
+                    f"[{hadm_id}]      MI-Related: {finding.get('mi_related', 'N/A')}"
+                )
+                logger.info(
+                    f"[{hadm_id}]      Context: {finding.get('context', 'N/A')[:100]}..."
+                )
             if thrombus_findings:
-                logger.info(f"[{hadm_id}] ANGIOGRAPHY - Thrombus findings detected: {len(thrombus_findings)}")
+                logger.info(
+                    f"[{hadm_id}] ANGIOGRAPHY - Thrombus findings detected: {len(thrombus_findings)}"
+                )
         else:
-            logger.info(f"[{hadm_id}] ANGIOGRAPHY EVIDENCE - No angiography findings detected")
+            logger.info(
+                f"[{hadm_id}] ANGIOGRAPHY EVIDENCE - No angiography findings detected"
+            )
 
         # Add a summary flag for the rule engine
         evidence["thrombus_present"] = any(

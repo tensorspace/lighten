@@ -225,32 +225,50 @@ class ClinicalEvidenceExtractor(BaseEvidenceCollector):
             and isinstance(self.llm_client, LightenLLMClient)
             and self.llm_client.enabled
         )
-        
-        logger.info(f"[{hadm_id}] CLINICAL EXTRACTION - Method selection: LLM available={try_llm}")
-        
+
+        logger.info(
+            f"[{hadm_id}] CLINICAL EXTRACTION - Method selection: LLM available={try_llm}"
+        )
+
         if try_llm:
             try:
-                logger.info(f"[{hadm_id}] CLINICAL EXTRACTION - Attempting LLM extraction...")
+                logger.info(
+                    f"[{hadm_id}] CLINICAL EXTRACTION - Attempting LLM extraction..."
+                )
                 symptoms, diagnoses = self._extract_with_llm(notes)
                 mode = "llm"
-                logger.info(f"[{hadm_id}] CLINICAL EXTRACTION - LLM extraction successful: {len(symptoms)} symptoms, {len(diagnoses)} diagnoses")
+                logger.info(
+                    f"[{hadm_id}] CLINICAL EXTRACTION - LLM extraction successful: {len(symptoms)} symptoms, {len(diagnoses)} diagnoses"
+                )
             except Exception as e:
-                logger.warning(f"[{hadm_id}] CLINICAL EXTRACTION - LLM extraction failed: {str(e)}, falling back to regex")
+                logger.warning(
+                    f"[{hadm_id}] CLINICAL EXTRACTION - LLM extraction failed: {str(e)}, falling back to regex"
+                )
                 symptoms, diagnoses = self._extract_with_regex(notes)
                 mode = "regex_fallback"
-                logger.info(f"[{hadm_id}] CLINICAL EXTRACTION - Regex fallback successful: {len(symptoms)} symptoms, {len(diagnoses)} diagnoses")
+                logger.info(
+                    f"[{hadm_id}] CLINICAL EXTRACTION - Regex fallback successful: {len(symptoms)} symptoms, {len(diagnoses)} diagnoses"
+                )
         else:
-            logger.info(f"[{hadm_id}] CLINICAL EXTRACTION - Using regex extraction (LLM not available)")
+            logger.info(
+                f"[{hadm_id}] CLINICAL EXTRACTION - Using regex extraction (LLM not available)"
+            )
             symptoms, diagnoses = self._extract_with_regex(notes)
             mode = "regex"
-            logger.info(f"[{hadm_id}] CLINICAL EXTRACTION - Regex extraction complete: {len(symptoms)} symptoms, {len(diagnoses)} diagnoses")
+            logger.info(
+                f"[{hadm_id}] CLINICAL EXTRACTION - Regex extraction complete: {len(symptoms)} symptoms, {len(diagnoses)} diagnoses"
+            )
 
         # Log detailed evidence found
         if symptoms:
             logger.info(f"[{hadm_id}] CLINICAL EVIDENCE FOUND:")
             for i, symptom in enumerate(symptoms[:5], 1):  # Log first 5 symptoms
-                logger.info(f"[{hadm_id}]   {i}. {symptom.get('name', 'unknown')} (confidence: {symptom.get('confidence', 'N/A')})")
-                logger.info(f"[{hadm_id}]      Context: {symptom.get('context', 'N/A')[:100]}...")
+                logger.info(
+                    f"[{hadm_id}]   {i}. {symptom.get('name', 'unknown')} (confidence: {symptom.get('confidence', 'N/A')})"
+                )
+                logger.info(
+                    f"[{hadm_id}]      Context: {symptom.get('context', 'N/A')[:100]}..."
+                )
         else:
             logger.info(f"[{hadm_id}] CLINICAL EVIDENCE - No symptoms found")
 
