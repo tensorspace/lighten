@@ -103,21 +103,77 @@ class PatientLevelClinicalPipeline:
             logger.info(
                 f"[STEP_1] Collecting historical evidence for patient {patient_id}"
             )
+            logger.info(
+                f"[PIPELINE_FLOW] Starting cross-admission evidence aggregation for {len(visit_history)} visits"
+            )
+            logger.debug(
+                f"[DEBUG] Visit sequence: {[f"{v['hadm_id']}({v['chartdate']})" for v in visit_history]}"
+            )
+
             historical_evidence = self._collect_historical_evidence(
                 patient_id, visit_history
             )
+
+            # Log comprehensive evidence summary
+            logger.info(
+                f"[EVIDENCE_SUMMARY] Patient {patient_id} - Cross-admission evidence collected:"
+            )
+            logger.info(
+                f"[EVIDENCE_SUMMARY]   Troponin tests: {len(historical_evidence.get('troponin', {}).get('troponin_tests', []))}"
+            )
+            logger.info(
+                f"[EVIDENCE_SUMMARY]   Clinical symptoms: {len(historical_evidence.get('clinical', {}).get('symptoms', []))}"
+            )
+            logger.info(
+                f"[EVIDENCE_SUMMARY]   Clinical diagnoses: {len(historical_evidence.get('clinical', {}).get('diagnoses', []))}"
+            )
+            logger.info(
+                f"[EVIDENCE_SUMMARY]   ECG findings: {len(historical_evidence.get('ecg', {}).get('findings', []))}"
+            )
+            logger.info(
+                f"[EVIDENCE_SUMMARY]   Imaging findings: {len(historical_evidence.get('imaging', {}).get('findings', []))}"
+            )
+            logger.info(
+                f"[EVIDENCE_SUMMARY]   Angiography findings: {len(historical_evidence.get('angiography', {}).get('findings', []))}"
+            )
+
             logger.debug(
                 f"[DEBUG] Evidence collection completed for patient {patient_id}"
             )
 
             # Step 2: Evaluate MI criteria using complete patient history
             logger.info(f"[STEP_2] Evaluating MI criteria for patient {patient_id}")
+            logger.info(
+                f"[PIPELINE_FLOW] Using aggregated cross-admission evidence for MI diagnosis"
+            )
             logger.debug(
                 f"[DEBUG] Evidence keys available: {list(historical_evidence.keys())}"
             )
+
+            # Log evidence quality before evaluation
+            troponin_available = historical_evidence.get("troponin", {}).get(
+                "troponin_available", False
+            )
+            clinical_evidence_count = len(
+                historical_evidence.get("clinical", {}).get("symptoms", [])
+            ) + len(historical_evidence.get("clinical", {}).get("diagnoses", []))
+            logger.info(
+                f"[PRE_EVALUATION] Troponin data available: {troponin_available}"
+            )
+            logger.info(
+                f"[PRE_EVALUATION] Clinical evidence items: {clinical_evidence_count}"
+            )
+
             mi_result = self.rule_engine.evaluate(historical_evidence)
+
             logger.info(
                 f"[MI_RESULT] Patient {patient_id} - MI Criteria Result: {'PASSED' if mi_result.passed else 'FAILED'}"
+            )
+            logger.info(
+                f"[MI_RESULT] Criteria A (Troponin): {'MET' if mi_result.details.get('criteria_A', {}).get('met', False) else 'NOT MET'}"
+            )
+            logger.info(
+                f"[MI_RESULT] Criteria B (Clinical): {'MET' if mi_result.details.get('criteria_B', {}).get('met', False) else 'NOT MET'}"
             )
             logger.debug(f"[DEBUG] MI result details: {mi_result.details}")
 
@@ -127,20 +183,42 @@ class PatientLevelClinicalPipeline:
                 logger.info(
                     f"[STEP_3] Determining MI onset date for patient {patient_id}"
                 )
+                logger.info(
+                    f"[PIPELINE_FLOW] Using complete patient timeline for onset date resolution"
+                )
+                logger.info(
+                    f"[TIMELINE_ANALYSIS] Analyzing {len(visit_history)} visits spanning {visit_summary['date_range']['span_days']} days"
+                )
+
                 onset_date = self._determine_historical_onset_date(
                     patient_id, visit_history, historical_evidence
                 )
+
                 if onset_date:
                     logger.info(
                         f"[ONSET_DATE] Patient {patient_id} - MI Onset Date: {onset_date}"
                     )
+                    # Calculate onset relative to first visit
+                    first_visit_date = (
+                        visit_history[0]["chartdate"] if visit_history else None
+                    )
+                    if first_visit_date:
+                        logger.info(
+                            f"[ONSET_CONTEXT] Onset date relative to first visit ({first_visit_date})"
+                        )
                 else:
                     logger.warning(
                         f"[WARNING] Could not determine onset date for patient {patient_id}"
                     )
+                    logger.warning(
+                        f"[WARNING] Checked {len(visit_history)} visits but no definitive onset found"
+                    )
             else:
+                logger.info(
+                    f"[STEP_3] Skipping onset date determination - MI criteria not met for patient {patient_id}"
+                )
                 logger.debug(
-                    f"[DEBUG] Skipping onset date determination - MI criteria not met for patient {patient_id}"
+                    f"[DEBUG] MI diagnosis negative, onset date not applicable"
                 )
 
             # Step 4: Compile comprehensive results
@@ -208,57 +286,166 @@ class PatientLevelClinicalPipeline:
         for visit_idx, visit in enumerate(visit_history, 1):
             hadm_id = visit["hadm_id"]
             visit_date = visit["chartdate"]
+            text_length = len(visit.get("text", ""))
 
             logger.info(
-                f"[{patient_id}] Processing visit {visit_idx}/{len(visit_history)}: {hadm_id} ({visit_date})"
+                f"[{patient_id}] === PROCESSING VISIT {visit_idx}/{len(visit_history)} ==="
+            )
+            logger.info(
+                f"[{patient_id}] Visit Details: {hadm_id} on {visit_date} ({text_length:,} chars)"
+            )
+            logger.debug(
+                f"[DEBUG] {patient_id} - Visit {visit_idx} chronological position in patient timeline"
             )
 
             # Collect troponin data for this visit
+            logger.debug(
+                f"[DEBUG] {patient_id} - Collecting troponin evidence for visit {hadm_id}"
+            )
             visit_troponin = self._collect_visit_troponin(patient_id, hadm_id)
+
             if visit_troponin["troponin_available"]:
+                troponin_count_before = len(
+                    historical_evidence["troponin"]["troponin_tests"]
+                )
                 historical_evidence["troponin"]["troponin_available"] = True
                 historical_evidence["troponin"]["troponin_tests"].extend(
                     visit_troponin["troponin_tests"]
                 )
+                troponin_count_after = len(
+                    historical_evidence["troponin"]["troponin_tests"]
+                )
+                new_tests = troponin_count_after - troponin_count_before
+
                 logger.info(
-                    f"[{patient_id}] Visit {hadm_id}: Found {len(visit_troponin['troponin_tests'])} troponin tests"
+                    f"[{patient_id}] ✅ Visit {hadm_id}: Added {new_tests} troponin tests (total: {troponin_count_after})"
+                )
+
+                # Log troponin values for this visit
+                for test in visit_troponin["troponin_tests"]:
+                    logger.debug(
+                        f"[DEBUG] {patient_id} - Troponin: {test.get('value', 'N/A')} {test.get('unit', '')} at {test.get('charttime', 'N/A')} (threshold: {'✅' if test.get('above_threshold') else '❌'})"
+                    )
+            else:
+                logger.info(
+                    f"[{patient_id}] ➖ Visit {hadm_id}: No troponin tests found"
                 )
 
             # Collect clinical evidence for this visit
+            logger.debug(
+                f"[DEBUG] {patient_id} - Collecting clinical evidence for visit {hadm_id}"
+            )
             visit_clinical = self._collect_visit_clinical_evidence(
                 patient_id, hadm_id, visit["text"]
             )
+
             if visit_clinical["symptoms"]:
+                symptoms_count_before = len(historical_evidence["clinical"]["symptoms"])
                 historical_evidence["clinical"]["symptoms"].extend(
                     visit_clinical["symptoms"]
                 )
+                symptoms_count_after = len(historical_evidence["clinical"]["symptoms"])
+                new_symptoms = symptoms_count_after - symptoms_count_before
+
                 logger.info(
-                    f"[{patient_id}] Visit {hadm_id}: Found {len(visit_clinical['symptoms'])} symptoms"
+                    f"[{patient_id}] ✅ Visit {hadm_id}: Added {new_symptoms} symptoms (total: {symptoms_count_after})"
                 )
+
+                # Log specific symptoms found
+                for symptom in visit_clinical["symptoms"]:
+                    logger.debug(
+                        f"[DEBUG] {patient_id} - Symptom: {symptom.get('symptom', 'N/A')} (confidence: {symptom.get('confidence', 'N/A')})"
+                    )
+            else:
+                logger.info(f"[{patient_id}] ➖ Visit {hadm_id}: No symptoms found")
+
             if visit_clinical["diagnoses"]:
+                diagnoses_count_before = len(
+                    historical_evidence["clinical"]["diagnoses"]
+                )
                 historical_evidence["clinical"]["diagnoses"].extend(
                     visit_clinical["diagnoses"]
                 )
-                logger.info(
-                    f"[{patient_id}] Visit {hadm_id}: Found {len(visit_clinical['diagnoses'])} diagnoses"
+                diagnoses_count_after = len(
+                    historical_evidence["clinical"]["diagnoses"]
                 )
+                new_diagnoses = diagnoses_count_after - diagnoses_count_before
+
+                logger.info(
+                    f"[{patient_id}] ✅ Visit {hadm_id}: Added {new_diagnoses} diagnoses (total: {diagnoses_count_after})"
+                )
+
+                # Log specific diagnoses found
+                for diagnosis in visit_clinical["diagnoses"]:
+                    logger.debug(
+                        f"[DEBUG] {patient_id} - Diagnosis: {diagnosis.get('diagnosis', 'N/A')} (confidence: {diagnosis.get('confidence', 'N/A')})"
+                    )
+            else:
+                logger.info(f"[{patient_id}] ➖ Visit {hadm_id}: No diagnoses found")
+
+            # Log visit processing completion
+            logger.info(f"[{patient_id}] ✅ Visit {visit_idx} processing completed")
 
             # Collect other evidence types (ECG, imaging, angiography)
             # Note: These would be expanded based on available data sources
+            logger.debug(
+                f"[DEBUG] {patient_id} - Additional evidence collection (ECG, imaging, angiography) would be implemented here"
+            )
+
+            # Log visit completion with running totals
+            running_totals = {
+                "troponin_tests": len(
+                    historical_evidence["troponin"]["troponin_tests"]
+                ),
+                "symptoms": len(historical_evidence["clinical"]["symptoms"]),
+                "diagnoses": len(historical_evidence["clinical"]["diagnoses"]),
+            }
+            logger.debug(
+                f"[DEBUG] {patient_id} - Running totals after visit {visit_idx}: T={running_totals['troponin_tests']}, S={running_totals['symptoms']}, D={running_totals['diagnoses']}"
+            )
 
         # Aggregate and deduplicate evidence
+        logger.info(f"[{patient_id}] === EVIDENCE AGGREGATION & DEDUPLICATION ===")
+        evidence_before_aggregation = {
+            "troponin_tests": len(historical_evidence["troponin"]["troponin_tests"]),
+            "symptoms": len(historical_evidence["clinical"]["symptoms"]),
+            "diagnoses": len(historical_evidence["clinical"]["diagnoses"]),
+        }
+
         historical_evidence = self._aggregate_evidence(historical_evidence)
 
-        logger.info(f"[{patient_id}] HISTORICAL EVIDENCE SUMMARY:")
+        evidence_after_aggregation = {
+            "troponin_tests": len(historical_evidence["troponin"]["troponin_tests"]),
+            "symptoms": len(historical_evidence["clinical"]["symptoms"]),
+            "diagnoses": len(historical_evidence["clinical"]["diagnoses"]),
+        }
+
+        logger.info(f"[{patient_id}] CROSS-ADMISSION EVIDENCE AGGREGATION COMPLETE:")
         logger.info(
-            f"[{patient_id}]   Total troponin tests: {len(historical_evidence['troponin']['troponin_tests'])}"
+            f"[{patient_id}]   Troponin tests: {evidence_before_aggregation['troponin_tests']} → {evidence_after_aggregation['troponin_tests']} (deduplicated: {evidence_before_aggregation['troponin_tests'] - evidence_after_aggregation['troponin_tests']})"
         )
         logger.info(
-            f"[{patient_id}]   Total symptoms: {len(historical_evidence['clinical']['symptoms'])}"
+            f"[{patient_id}]   Clinical symptoms: {evidence_before_aggregation['symptoms']} → {evidence_after_aggregation['symptoms']} (deduplicated: {evidence_before_aggregation['symptoms'] - evidence_after_aggregation['symptoms']})"
         )
         logger.info(
-            f"[{patient_id}]   Total diagnoses: {len(historical_evidence['clinical']['diagnoses'])}"
+            f"[{patient_id}]   Clinical diagnoses: {evidence_before_aggregation['diagnoses']} → {evidence_after_aggregation['diagnoses']} (deduplicated: {evidence_before_aggregation['diagnoses'] - evidence_after_aggregation['diagnoses']})"
         )
+
+        # Log timeline span
+        visit_dates = historical_evidence.get("visit_metadata", {}).get(
+            "visit_dates", []
+        )
+        if len(visit_dates) > 1:
+            timeline_span = (
+                (visit_dates[-1] - visit_dates[0]).days
+                if hasattr(visit_dates[0], "days")
+                else "N/A"
+            )
+            logger.info(
+                f"[{patient_id}]   Timeline span: {timeline_span} days across {len(visit_dates)} visits"
+            )
+
+        logger.info(f"[{patient_id}] 🎯 READY FOR MI CRITERIA EVALUATION")
 
         return historical_evidence
 

@@ -47,32 +47,63 @@ class TroponinAnalyzer(BaseEvidenceCollector):
         Returns:
             Dictionary containing troponin analysis results
         """
-        logger.info(f"[{hadm_id}] Starting troponin analysis for patient {patient_id}")
+        # Use patient_id for logging instead of hadm_id (which can be null)
+        logger.info(f"[PATIENT_{patient_id}] === TROPONIN ANALYSIS START ===")
+        logger.info(
+            f"[PATIENT_{patient_id}] Analyzing admission: {hadm_id or 'UNKNOWN'}"
+        )
+        logger.debug(
+            f"[DEBUG] Patient {patient_id} - Single admission troponin analysis mode"
+        )
         evidence = self._get_evidence_base()
 
         # Get all troponin tests for the patient's admission
+        logger.debug(
+            f"[DEBUG] Patient {patient_id} - Querying lab data for admission {hadm_id}"
+        )
         troponin_tests = self.lab_data_loader.get_troponin_tests(patient_id, hadm_id)
-        logger.info(f"[{hadm_id}] Found {len(troponin_tests)} troponin test records")
+        logger.info(
+            f"[PATIENT_{patient_id}] 📊 Found {len(troponin_tests)} troponin test records for admission {hadm_id or 'UNKNOWN'}"
+        )
+
+        if not troponin_tests.empty:
+            # Log test distribution
+            test_dates = (
+                troponin_tests["charttime"].dt.date.value_counts().sort_index()
+                if "charttime" in troponin_tests.columns
+                else None
+            )
+            if test_dates is not None and len(test_dates) > 0:
+                logger.info(
+                    f"[PATIENT_{patient_id}] 📅 Tests span {len(test_dates)} days: {test_dates.index[0]} to {test_dates.index[-1]}"
+                )
+                logger.debug(
+                    f"[DEBUG] Patient {patient_id} - Daily test distribution: {dict(test_dates)}"
+                )
 
         if troponin_tests.empty:
             logger.warning(
-                f"[{hadm_id}] No troponin tests found for patient {patient_id}"
+                f"[PATIENT_{patient_id}] No troponin tests found for admission {hadm_id or 'UNKNOWN'}"
             )
             evidence["troponin_available"] = False
             return evidence
 
         # Process troponin values
-        processed = self._process_troponin_tests(troponin_tests)
+        processed = self._process_troponin_tests(troponin_tests, patient_id)
         logger.info(
-            f"[{hadm_id}] Processed troponin values: max={processed.get('max_value', 'N/A')}, count={len(processed.get('values', []))}"
+            f"[PATIENT_{patient_id}] Processed troponin values: max={processed.get('max_value', 'N/A')}, count={len(processed.get('values', []))}"
         )
 
         # Check for MI criteria
-        criteria_met, criteria_details = self._check_mi_criteria(processed["values"])
-        logger.info(
-            f"[{hadm_id}] *** TROPONIN CRITERIA RESULT: {'MET' if criteria_met else 'NOT MET'} ***"
+        criteria_met, criteria_details = self._check_mi_criteria(
+            processed["values"], patient_id
         )
-        logger.info(f"[{hadm_id}] Troponin criteria details: {criteria_details}")
+        logger.info(
+            f"[PATIENT_{patient_id}] *** TROPONIN CRITERIA RESULT: {'MET' if criteria_met else 'NOT MET'} ***"
+        )
+        logger.info(
+            f"[PATIENT_{patient_id}] Troponin criteria details: {criteria_details}"
+        )
 
         evidence.update(
             {
@@ -93,11 +124,192 @@ class TroponinAnalyzer(BaseEvidenceCollector):
 
         return evidence
 
-    def _process_troponin_tests(self, troponin_tests: Any) -> Dict[str, Any]:
+    def analyze_patient_troponin_history(self, patient_id: str) -> Dict[str, Any]:
+        """Analyze complete troponin history for a patient across all admissions.
+
+        This method provides patient-level troponin analysis by aggregating
+        all troponin tests across the patient's complete medical history.
+
+        Args:
+            patient_id: The ID of the patient
+
+        Returns:
+            Dictionary containing comprehensive patient-level troponin analysis
+        """
+        logger.info(
+            f"[PATIENT_{patient_id}] === PATIENT-LEVEL TROPONIN ANALYSIS START ==="
+        )
+        logger.info(
+            f"[PATIENT_{patient_id}] 🔍 Cross-admission troponin pattern analysis"
+        )
+        logger.debug(
+            f"[DEBUG] Patient {patient_id} - Collecting complete troponin history across all admissions"
+        )
+        logger.info(
+            f"[PATIENT_{patient_id}] 🎯 Analyzing temporal patterns for MI diagnosis"
+        )
+
+        evidence = self._get_evidence_base()
+
+        # Get complete troponin history for the patient
+        try:
+            logger.debug(
+                f"[DEBUG] Patient {patient_id} - Querying complete patient troponin history"
+            )
+            troponin_history = self.lab_data_loader.get_patient_troponin_history(
+                patient_id
+            )
+            logger.info(
+                f"[PATIENT_{patient_id}] 📊 Found {len(troponin_history)} total troponin tests across ALL admissions"
+            )
+
+            if not troponin_history.empty:
+                # Log comprehensive history statistics
+                unique_admissions = (
+                    troponin_history["hadm_id"].nunique()
+                    if "hadm_id" in troponin_history.columns
+                    else 0
+                )
+                date_range = None
+                if "charttime" in troponin_history.columns:
+                    min_date = troponin_history["charttime"].min()
+                    max_date = troponin_history["charttime"].max()
+                    span_days = (
+                        (max_date - min_date).days if min_date and max_date else 0
+                    )
+                    date_range = (
+                        f"{min_date.date()} to {max_date.date()} ({span_days} days)"
+                    )
+
+                logger.info(
+                    f"[PATIENT_{patient_id}] 🏥 Tests across {unique_admissions} admissions"
+                )
+                if date_range:
+                    logger.info(f"[PATIENT_{patient_id}] 📅 Timeline: {date_range}")
+
+                # Log value distribution
+                if "valuenum" in troponin_history.columns:
+                    values = troponin_history["valuenum"].dropna()
+                    if len(values) > 0:
+                        max_value = values.max()
+                        min_value = values.min()
+                        above_threshold = (values > self.troponin_threshold).sum()
+                        logger.info(
+                            f"[PATIENT_{patient_id}] 📈 Value range: {min_value:.3f} - {max_value:.3f} ng/mL"
+                        )
+                        logger.info(
+                            f"[PATIENT_{patient_id}] 🎯 Tests above threshold (>{self.troponin_threshold}): {above_threshold}/{len(values)}"
+                        )
+
+            if troponin_history.empty:
+                logger.warning(
+                    f"[PATIENT_{patient_id}] No troponin tests found in patient's complete history"
+                )
+                evidence["troponin_available"] = False
+                evidence["patient_level_analysis"] = {
+                    "total_tests": 0,
+                    "admissions_with_troponin": 0,
+                    "date_range": None,
+                    "historical_pattern": "No troponin data available",
+                }
+                return evidence
+
+            # Process patient-level troponin data
+            logger.info(
+                f"[PATIENT_{patient_id}] 🔄 Processing cross-admission troponin patterns..."
+            )
+            processed = self._process_patient_troponin_history(
+                troponin_history, patient_id
+            )
+            logger.info(
+                f"[PATIENT_{patient_id}] 📋 Patient-level analysis summary: {processed['summary']}"
+            )
+
+            # Log detailed processing results
+            if "patient_analysis" in processed:
+                analysis = processed["patient_analysis"]
+                logger.info(
+                    f"[PATIENT_{patient_id}] 🏥 Admissions with troponin: {analysis.get('admissions_with_troponin', 0)}"
+                )
+                logger.info(
+                    f"[PATIENT_{patient_id}] 📊 Total test count: {analysis.get('total_tests', 0)}"
+                )
+                if "date_range" in analysis and analysis["date_range"]:
+                    logger.info(
+                        f"[PATIENT_{patient_id}] 📅 Analysis period: {analysis['date_range']}"
+                    )
+
+            # Check for MI criteria using complete patient history
+            logger.info(
+                f"[PATIENT_{patient_id}] 🎯 Evaluating MI criteria using complete patient timeline..."
+            )
+            criteria_met, criteria_details = self._check_patient_mi_criteria(
+                processed["values"], patient_id
+            )
+            logger.info(
+                f"[PATIENT_{patient_id}] *** 🚨 PATIENT-LEVEL TROPONIN CRITERIA: {'✅ MET' if criteria_met else '❌ NOT MET'} ***"
+            )
+
+            # Log detailed criteria evaluation
+            if criteria_details:
+                logger.info(
+                    f"[PATIENT_{patient_id}] 📝 Criteria details: {criteria_details.get('criteria_met', 'N/A')}"
+                )
+                if "rise_fall_pattern" in criteria_details:
+                    logger.info(
+                        f"[PATIENT_{patient_id}] 📈 Rise/fall pattern: {'✅ Detected' if criteria_details['rise_fall_pattern'] else '❌ Not detected'}"
+                    )
+                if "above_threshold" in criteria_details:
+                    logger.info(
+                        f"[PATIENT_{patient_id}] 🎯 Above threshold: {'✅ Yes' if criteria_details['above_threshold'] else '❌ No'}"
+                    )
+
+            evidence.update(
+                {
+                    "troponin_available": True,
+                    "troponin_tests": processed["values"],
+                    "max_troponin": processed["max_value"],
+                    "mi_criteria_met": criteria_met,
+                    "criteria_details": criteria_details,
+                    "patient_level_analysis": processed["patient_analysis"],
+                    "sources": [
+                        {
+                            "type": "lab_history",
+                            "description": "Complete patient troponin history",
+                            "count": len(processed["values"]),
+                            "admissions": processed["patient_analysis"][
+                                "admissions_with_troponin"
+                            ],
+                        }
+                    ],
+                }
+            )
+
+            return evidence
+
+        except Exception as e:
+            logger.error(
+                f"[PATIENT_{patient_id}] ❌ ERROR in patient-level troponin analysis: {e}"
+            )
+            logger.error(
+                f"[PATIENT_{patient_id}] 🚨 Cross-admission analysis failed - falling back to error state"
+            )
+            logger.debug(
+                f"[DEBUG] Patient {patient_id} - Exception details", exc_info=True
+            )
+            evidence["troponin_available"] = False
+            evidence["error"] = f"Patient-level analysis failed: {str(e)}"
+            evidence["analysis_type"] = "failed_patient_level"
+            return evidence
+
+    def _process_troponin_tests(
+        self, troponin_tests: Any, patient_id: str = None
+    ) -> Dict[str, Any]:
         """Process raw troponin test data.
 
         Args:
             troponin_tests: DataFrame containing troponin test results
+            patient_id: Patient ID for logging (optional, for backward compatibility)
 
         Returns:
             Dictionary containing processed troponin values and metadata
@@ -126,11 +338,14 @@ class TroponinAnalyzer(BaseEvidenceCollector):
                     or not isinstance(value, (int, float))
                     or value != value
                 ):  # NaN check
-                    logger.warning(
-                        f"[SKIP] TROPONIN TEST: Invalid value (NaN) detected - skipping test"
+                    log_prefix = (
+                        f"[PATIENT_{patient_id}]" if patient_id else "[TROPONIN]"
                     )
                     logger.warning(
-                        f"[DATA_QUALITY] Raw value from database: {test.get('valuenum', test.get('value', 'N/A'))}"
+                        f"{log_prefix} [SKIP] TROPONIN TEST: Invalid value (NaN) detected - skipping test"
+                    )
+                    logger.warning(
+                        f"{log_prefix} [DATA_QUALITY] Raw value from database: {test.get('valuenum', test.get('value', 'N/A'))}"
                     )
                     continue
 
@@ -547,3 +762,186 @@ class TroponinAnalyzer(BaseEvidenceCollector):
                 return False
 
         return True
+
+    def _process_patient_troponin_history(
+        self, troponin_history: pd.DataFrame, patient_id: str
+    ) -> Dict[str, Any]:
+        """Process complete patient troponin history across all admissions.
+
+        Args:
+            troponin_history: DataFrame containing all troponin tests for the patient
+            patient_id: Patient ID for logging
+
+        Returns:
+            Dictionary containing processed patient-level troponin analysis
+        """
+        logger.debug(
+            f"[PATIENT_{patient_id}] Processing {len(troponin_history)} troponin tests from patient history"
+        )
+
+        # Process all troponin tests using existing method
+        processed = self._process_troponin_tests(troponin_history, patient_id)
+
+        # Add patient-level analysis metadata
+        unique_admissions = (
+            troponin_history["hadm_id"].nunique()
+            if "hadm_id" in troponin_history.columns
+            else 0
+        )
+        date_range_start = (
+            troponin_history["charttime"].min()
+            if "charttime" in troponin_history.columns
+            else None
+        )
+        date_range_end = (
+            troponin_history["charttime"].max()
+            if "charttime" in troponin_history.columns
+            else None
+        )
+
+        # Calculate elevated test statistics
+        elevated_tests = [
+            test for test in processed["values"] if test.get("above_threshold", False)
+        ]
+        elevated_count = len(elevated_tests)
+
+        # Analyze temporal patterns
+        temporal_pattern = self._analyze_temporal_pattern(
+            processed["values"], patient_id
+        )
+
+        patient_analysis = {
+            "total_tests": len(processed["values"]),
+            "admissions_with_troponin": unique_admissions,
+            "elevated_tests": elevated_count,
+            "elevation_rate": (
+                (elevated_count / len(processed["values"])) * 100
+                if processed["values"]
+                else 0
+            ),
+            "date_range": {
+                "first_test": str(date_range_start) if date_range_start else None,
+                "last_test": str(date_range_end) if date_range_end else None,
+                "span_days": (
+                    (date_range_end - date_range_start).days
+                    if date_range_start and date_range_end
+                    else 0
+                ),
+            },
+            "temporal_pattern": temporal_pattern,
+            "max_value": processed["max_value"],
+            "historical_pattern": self._classify_historical_pattern(
+                processed["values"], patient_id
+            ),
+        }
+
+        # Create summary string
+        summary = f"{elevated_count}/{len(processed['values'])} elevated tests across {unique_admissions} admissions"
+        if date_range_start and date_range_end:
+            span_days = (date_range_end - date_range_start).days
+            summary += f" over {span_days} days"
+
+        processed["patient_analysis"] = patient_analysis
+        processed["summary"] = summary
+
+        logger.debug(
+            f"[PATIENT_{patient_id}] Patient-level troponin summary: {summary}"
+        )
+
+        return processed
+
+    def _check_patient_mi_criteria(
+        self, values: List[Dict], patient_id: str
+    ) -> Tuple[bool, Dict]:
+        """Check MI criteria using complete patient troponin history.
+
+        Args:
+            values: List of processed troponin values across all admissions
+            patient_id: Patient ID for logging
+
+        Returns:
+            Tuple of (criteria_met: bool, criteria_details: dict)
+        """
+        logger.debug(
+            f"[PATIENT_{patient_id}] Evaluating MI criteria using {len(values)} troponin tests from complete patient history"
+        )
+
+        # Use existing criteria check but with enhanced patient-level logging
+        criteria_met, criteria_details = self._check_mi_criteria(values, patient_id)
+
+        # Add patient-level context to criteria details
+        if criteria_met:
+            logger.info(f"[PATIENT_{patient_id}] *** PATIENT-LEVEL MI CRITERIA MET ***")
+            logger.info(
+                f"[PATIENT_{patient_id}] Criteria type: {criteria_details.get('type', 'Unknown')}"
+            )
+            logger.info(
+                f"[PATIENT_{patient_id}] Supporting evidence: {criteria_details.get('reason', 'Not specified')}"
+            )
+        else:
+            logger.info(f"[PATIENT_{patient_id}] Patient-level MI criteria NOT met")
+            logger.debug(
+                f"[PATIENT_{patient_id}] Reason: {criteria_details.get('reason', 'Insufficient evidence')}"
+            )
+
+        # Enhance criteria details with patient-level context
+        criteria_details["patient_level_analysis"] = True
+        criteria_details["total_tests_analyzed"] = len(values)
+
+        return criteria_met, criteria_details
+
+    def _analyze_temporal_pattern(self, values: List[Dict], patient_id: str) -> str:
+        """Analyze temporal patterns in troponin values.
+
+        Args:
+            values: List of processed troponin values
+            patient_id: Patient ID for logging
+
+        Returns:
+            String describing the temporal pattern
+        """
+        if len(values) < 2:
+            return "Insufficient data for temporal analysis"
+
+        # Sort by timestamp
+        sorted_values = sorted(values, key=lambda x: x.get("timestamp", ""))
+
+        # Analyze trend
+        elevated_values = [v for v in sorted_values if v.get("above_threshold", False)]
+
+        if not elevated_values:
+            return "No elevated values detected"
+        elif len(elevated_values) == 1:
+            return "Single elevated value"
+        else:
+            # Check for rise/fall pattern
+            if len(elevated_values) >= 2:
+                return "Multiple elevated values - potential dynamic pattern"
+            else:
+                return "Isolated elevation"
+
+    def _classify_historical_pattern(self, values: List[Dict], patient_id: str) -> str:
+        """Classify the overall historical pattern of troponin values.
+
+        Args:
+            values: List of processed troponin values
+            patient_id: Patient ID for logging
+
+        Returns:
+            String classification of the historical pattern
+        """
+        if not values:
+            return "No troponin data"
+
+        elevated_count = sum(1 for v in values if v.get("above_threshold", False))
+        total_count = len(values)
+        elevation_rate = (elevated_count / total_count) * 100
+
+        if elevation_rate == 0:
+            return "No elevations detected"
+        elif elevation_rate < 25:
+            return "Occasional elevations"
+        elif elevation_rate < 75:
+            return "Frequent elevations"
+        else:
+            return "Persistent elevations"
