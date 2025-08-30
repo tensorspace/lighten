@@ -180,14 +180,14 @@ class LabDataLoader(BaseDataLoader):
         # Convert time columns to datetime (both charttime and storetime)
         logger.info("Step 4: Converting time columns to datetime format...")
         time_columns = ["charttime", "storetime"]
-        
+
         for time_col in time_columns:
             if time_col in self.data.columns:
                 logger.info(f"Converting {time_col} to datetime...")
                 try:
                     self.data[time_col] = pd.to_datetime(self.data[time_col])
                     logger.info(f"✅ {time_col} conversion successful")
-                    
+
                     # Log time range for this column
                     if not self.data.empty:
                         min_time = self.data[time_col].min()
@@ -197,34 +197,42 @@ class LabDataLoader(BaseDataLoader):
                     logger.error(f"❌ Error converting {time_col}: {e}")
             else:
                 logger.warning(f"⚠️ {time_col} column not found in data")
-        
+
         # Log information about units column
         if "valueuom" in self.data.columns:
             unique_units = self.data["valueuom"].nunique()
-            logger.info(f"✅ Units column (valueuom) found: {unique_units} unique units")
-            
+            logger.info(
+                f"✅ Units column (valueuom) found: {unique_units} unique units"
+            )
+
             # Log most common units for debugging
             if not self.data.empty:
                 top_units = self.data["valueuom"].value_counts().head(10)
                 logger.info(f"Top 10 most common units: {dict(top_units)}")
         else:
             logger.warning("⚠️ Units column (valueuom) not found in data")
-            
+
         # Log critical columns for time series analysis
         critical_columns = ["charttime", "storetime", "valuenum", "valueuom"]
-        available_columns = [col for col in critical_columns if col in self.data.columns]
-        missing_columns = [col for col in critical_columns if col not in self.data.columns]
-        
+        available_columns = [
+            col for col in critical_columns if col in self.data.columns
+        ]
+        missing_columns = [
+            col for col in critical_columns if col not in self.data.columns
+        ]
+
         logger.info(f"✅ Critical columns available: {available_columns}")
         if missing_columns:
             logger.warning(f"⚠️ Critical columns missing: {missing_columns}")
-            
+
         # Explain the difference between charttime and storetime
         if "charttime" in self.data.columns and "storetime" in self.data.columns:
             logger.info("📋 Time column usage:")
             logger.info("  - charttime: When the measurement was taken (clinical time)")
             logger.info("  - storetime: When the result was stored in the system")
-            logger.info("  - For time series analysis, charttime should be used as primary temporal reference")
+            logger.info(
+                "  - For time series analysis, charttime should be used as primary temporal reference"
+            )
 
         logger.info("✅ Lab data loading process completed successfully.")
 
