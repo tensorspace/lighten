@@ -2,7 +2,7 @@
 
 import logging
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from .base_evidence_collector import BaseEvidenceCollector
 
@@ -31,34 +31,70 @@ class ImagingEvidenceExtractor(BaseEvidenceCollector):
         },
     ]
 
-    def __init__(self):
-        """Initialize the imaging evidence extractor."""
-        super().__init__()
+    def __init__(
+        self,
+        notes_data_loader: Any,
+        llm_client: Optional[Any] = None,
+        max_notes: Optional[int] = None,
+    ):
+        """Initialize the imaging evidence extractor.
 
-    def collect_evidence(
-        self, patient_id: str, hadm_id: str, text: str
-    ) -> Dict[str, Any]:
-        """Collect imaging evidence from a given clinical note text."""
-        log_prefix = f"[{patient_id}][{hadm_id}] [IMAGING]"
-        logger.debug(f"{log_prefix} Starting imaging evidence extraction.")
+        Args:
+            notes_data_loader: Instance of ClinicalNotesDataLoader
+            llm_client: Optional instance of the LLM client
+            max_notes: Maximum number of notes to process
+        """
+        super().__init__(
+            notes_data_loader=notes_data_loader,
+            llm_client=llm_client,
+            max_notes=max_notes,
+        )
 
-        evidence = {"imaging_findings": []}
-        findings = []
+    def collect_evidence(self, patient_id: str, hadm_id: str) -> Dict[str, Any]:
+        """Collect imaging evidence from notes for a specific admission."""
+        log_prefix = f"[{patient_id}][{hadm_id}] [IMAGING_EXTRACTOR]"
 
-        for definition in self.IMAGING_PATTERNS:
-            for match in definition["pattern"].finditer(text):
-                finding = {
-                    "finding_type": "imaging",
-                    "finding_name": definition["name"],
-                    "evidence": match.group(0),
-                    "mi_related": definition["mi_related"],
-                    "source": "regex",
-                }
-                findings.append(finding)
+        evidence = self._get_evidence_base()
+        evidence["imaging_findings"] = []
+        evidence["metadata"] = {"extraction_mode": "none"}
 
-        if findings:
-            logger.info(f"{log_prefix} Found {len(findings)} imaging-related findings.")
-            logger.debug(f"{log_prefix} Details: {findings}")
+        logger.info(f"{log_prefix} Fetching clinical notes for imaging evidence.")
+        notes = self.notes_data_loader.get_patient_notes(patient_id, hadm_id)
+        # Filter for relevant notes like echo reports
+        imaging_notes = notes[notes["note_type"].isin(["Echo", "Radiology"])]
+        logger.info(f"{log_prefix} Found {len(imaging_notes)} imaging reports out of {len(notes)} total notes.")
 
-        evidence["imaging_findings"] = findings
+        # Limit number of notes if configured
+        if self.max_notes and len(imaging_notes) > self.max_notes:
+            logger.info(f"{log_prefix} Limiting notes from {len(imaging_notes)} to {self.max_notes}.")
+            imaging_notes = imaging_notes.head(self.max_notes)
+
+        if imaging_notes.empty:
+            logger.warning(f"{log_prefix} No imaging reports found.")
+            return evidence
+
+        logger.info(f"{log_prefix} Processing {len(imaging_notes)} imaging reports.")
+
+        try_llm = self.llm_client and self.llm_client.enabled
+        logger.info(f"{log_prefix} Method selection: LLM available={try_llm}")
+
+        extracted_with_llm = False
+        if try_llm:
+            try:
+                logger.info(f"{log_prefix} Attempting LLM extraction...")
+                findings = self._extract_with_llm(imaging_notes)
+                evidence["imaging_findings"] = findings
+                evidence["metadata"]["extraction_mode"] = "llm"
+                extracted_with_llm = True
+                logger.info(f"{log_prefix} LLM extraction successful: {len(findings)} findings")
+            except Exception as e:
+                logger.warning(f"{log_prefix} LLM extraction failed: {e}")
+
+        if not extracted_with_llm:
+            logger.info(f"{log_prefix} Falling back to regex extraction...")
+            findings = self._extract_with_regex(imaging_notes)
+            evidence["imaging_findings"] = findings
+            evidence["metadata"]["extraction_mode"] = "regex"
+            logger.info(f"{log_prefix} Regex extraction completed: {len(findings)} findings")
+
         return evidence

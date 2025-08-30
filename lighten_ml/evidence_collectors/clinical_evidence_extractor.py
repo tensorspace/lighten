@@ -175,43 +175,67 @@ class ClinicalEvidenceExtractor(BaseEvidenceCollector):
         r"cardiogenic shock",
     ]
 
-    def __init__(self):
-        """Initialize the clinical evidence extractor."""
-        super().__init__()
+    def __init__(
+        self,
+        notes_data_loader: Any,
+        llm_client: Optional[Any] = None,
+        max_notes: Optional[int] = None,
+    ):
+        """Initialize the clinical evidence extractor.
 
-    def collect_evidence(
-        self, patient_id: str, hadm_id: str, text: str
-    ) -> Dict[str, Any]:
-        """Collect clinical evidence from a given clinical note text."""
-        log_prefix = f"[{patient_id}][{hadm_id}] [CLINICAL]"
-        logger.debug(f"{log_prefix} Starting clinical evidence extraction.")
+        Args:
+            notes_data_loader: Instance of ClinicalNotesDataLoader
+            llm_client: Optional instance of the LLM client
+            max_notes: Maximum number of notes to process
+        """
+        super().__init__(
+            notes_data_loader=notes_data_loader,
+            llm_client=llm_client,
+            max_notes=max_notes,
+        )
 
-        evidence = {"symptoms": []}
-        findings = []
+    def collect_evidence(self, patient_id: str, hadm_id: str) -> Dict[str, Any]:
+        """Collect clinical evidence from notes for a specific admission."""
+        log_prefix = f"[{patient_id}][{hadm_id}] [CLINICAL_EXTRACTOR]"
 
-        # Use regex patterns to find symptoms
-        for definition in self.SYMPTOM_PATTERNS:
-            for match in definition["pattern"].finditer(text):
-                finding = {
-                    "finding_type": "symptom",
-                    "finding_name": definition["name"],
-                    "evidence": match.group(0),
-                    "mi_related": definition["mi_related"],
-                    "source": "regex",
-                }
-                findings.append(finding)
+        evidence = self._get_evidence_base()
+        evidence["symptoms"] = []
+        evidence["metadata"] = {"extraction_mode": "none"}
 
-        if findings:
-            # Deduplicate findings based on name and evidence
-            unique_findings = list(
-                {(f["finding_name"], f["evidence"]): f for f in findings}.values()
-            )
-            logger.info(
-                f"{log_prefix} Found {len(unique_findings)} unique clinical symptoms/findings."
-            )
-            logger.debug(f"{log_prefix} Details: {unique_findings}")
-            evidence["symptoms"] = unique_findings
-        else:
-            logger.debug(f"{log_prefix} No clinical symptoms/findings found.")
+        logger.info(f"{log_prefix} Fetching clinical notes for symptom evidence.")
+        notes = self.notes_data_loader.get_patient_notes(patient_id, hadm_id)
+
+        if notes.empty:
+            logger.warning(f"{log_prefix} No clinical notes found for patient.")
+            return evidence
+
+        # Limit number of notes if configured
+        if self.max_notes and len(notes) > self.max_notes:
+            logger.info(f"{log_prefix} Limiting notes from {len(notes)} to {self.max_notes}.")
+            notes = notes.head(self.max_notes)
+
+        logger.info(f"{log_prefix} Processing {len(notes)} clinical notes.")
+
+        try_llm = self.llm_client and self.llm_client.enabled
+        logger.info(f"{log_prefix} Method selection: LLM available={try_llm}")
+
+        extracted_with_llm = False
+        if try_llm:
+            try:
+                logger.info(f"{log_prefix} Attempting LLM extraction...")
+                findings = self._extract_with_llm(notes)
+                evidence["symptoms"] = findings
+                evidence["metadata"]["extraction_mode"] = "llm"
+                extracted_with_llm = True
+                logger.info(f"{log_prefix} LLM extraction successful: {len(findings)} findings")
+            except Exception as e:
+                logger.warning(f"{log_prefix} LLM extraction failed: {e}")
+
+        if not extracted_with_llm:
+            logger.info(f"{log_prefix} Falling back to regex extraction...")
+            findings = self._extract_with_regex(notes)
+            evidence["symptoms"] = findings
+            evidence["metadata"]["extraction_mode"] = "regex"
+            logger.info(f"{log_prefix} Regex extraction completed: {len(findings)} findings")
 
         return evidence

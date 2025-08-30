@@ -95,14 +95,26 @@ class ClinicalPipeline:
         self.troponin_analyzer = TroponinAnalyzer(
             time_window_hours=troponin_config.get("time_window_hours", 72)
         )
-        self.clinical_evidence_extractor = ClinicalEvidenceExtractor()
+        self.clinical_evidence_extractor = ClinicalEvidenceExtractor(
+            notes_data_loader=self.notes_loader,
+            llm_client=self.llm_client,
+            max_notes=max_notes,
+        )
         self.ecg_evidence_extractor = ECGEvidenceExtractor(
             notes_data_loader=self.notes_loader,
             llm_client=self.llm_client,
             max_notes=max_notes,
         )
-        self.imaging_evidence_extractor = ImagingEvidenceExtractor()
-        self.angiography_evidence_extractor = AngiographyEvidenceExtractor()
+        self.imaging_evidence_extractor = ImagingEvidenceExtractor(
+            notes_data_loader=self.notes_loader,
+            llm_client=self.llm_client,
+            max_notes=max_notes,
+        )
+        self.angiography_evidence_extractor = AngiographyEvidenceExtractor(
+            notes_data_loader=self.notes_loader,
+            llm_client=self.llm_client,
+            max_notes=max_notes,
+        )
 
         # Initialize rule engine with config
         rule_engine_config = self.config.get("rule_engine", {})

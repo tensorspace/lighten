@@ -2,7 +2,7 @@
 
 import logging
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from .base_evidence_collector import BaseEvidenceCollector
 
@@ -20,32 +20,72 @@ class AngiographyEvidenceExtractor(BaseEvidenceCollector):
         }
     ]
 
-    def collect_evidence(
-        self, patient_id: str, hadm_id: str, text: str
-    ) -> Dict[str, Any]:
-        """Collect angiography evidence from a given clinical note text."""
-        log_prefix = f"[{patient_id}][{hadm_id}] [ANGIO]"
-        logger.debug(f"{log_prefix} Starting angiography evidence extraction.")
+    def __init__(
+        self,
+        notes_data_loader: Any,
+        llm_client: Optional[Any] = None,
+        max_notes: Optional[int] = None,
+    ):
+        """Initialize the angiography evidence extractor.
 
-        evidence = {"angiography_findings": []}
-        findings = []
+        Args:
+            notes_data_loader: Instance of ClinicalNotesDataLoader
+            llm_client: Optional instance of the LLM client
+            max_notes: Maximum number of notes to process
+        """
+        super().__init__(
+            notes_data_loader=notes_data_loader,
+            llm_client=llm_client,
+            max_notes=max_notes,
+        )
 
-        for definition in self.ANGIO_PATTERNS:
-            for match in definition["pattern"].finditer(text):
-                finding = {
-                    "finding_type": "angiography",
-                    "finding_name": definition["name"],
-                    "evidence": match.group(0),
-                    "mi_related": definition["mi_related"],
-                    "source": "regex",
-                }
-                findings.append(finding)
+    def collect_evidence(self, patient_id: str, hadm_id: str) -> Dict[str, Any]:
+        """Collect angiography evidence from notes for a specific admission."""
+        log_prefix = f"[{patient_id}][{hadm_id}] [ANGIO_EXTRACTOR]"
 
-        if findings:
-            logger.info(
-                f"{log_prefix} Found {len(findings)} angiography-related findings."
-            )
-            logger.debug(f"{log_prefix} Details: {findings}")
+        evidence = self._get_evidence_base()
+        evidence["angiography_findings"] = []
+        evidence["metadata"] = {"extraction_mode": "none"}
 
-        evidence["angiography_findings"] = findings
+        logger.info(f"{log_prefix} Fetching clinical notes for angiography evidence.")
+        notes = self.notes_data_loader.get_patient_notes(patient_id, hadm_id)
+        # Filter for relevant notes like cardiac cath reports
+        cath_notes = notes[notes["note_type"].isin(["Cardiac Cath"])]
+        logger.info(f"{log_prefix} Found {len(cath_notes)} cardiac cath reports out of {len(notes)} total notes.")
+
+        # Limit number of notes if configured
+        if self.max_notes and len(cath_notes) > self.max_notes:
+            logger.info(f"{log_prefix} Limiting notes from {len(cath_notes)} to {self.max_notes}.")
+            cath_notes = cath_notes.head(self.max_notes)
+
+        if cath_notes.empty:
+            logger.warning(f"{log_prefix} No cardiac cath reports found.")
+            return evidence
+
+        logger.info(f"{log_prefix} Processing {len(cath_notes)} cardiac cath reports.")
+
+        try_llm = self.llm_client and self.llm_client.enabled
+        logger.info(f"{log_prefix} Method selection: LLM available={try_llm}")
+
+        extracted_with_llm = False
+        if try_llm:
+            try:
+                logger.info(f"{log_prefix} Attempting LLM extraction...")
+                findings = self._extract_with_llm(cath_notes)
+                evidence["angiography_findings"] = findings
+                evidence["metadata"]["extraction_mode"] = "llm"
+                extracted_with_llm = True
+                logger.info(
+                    f"{log_prefix} LLM extraction successful: {len(findings)} findings"
+                )
+            except Exception as e:
+                logger.warning(f"{log_prefix} LLM extraction failed: {e}")
+
+        if not extracted_with_llm:
+            logger.info(f"{log_prefix} Falling back to regex extraction...")
+            findings = self._extract_with_regex(cath_notes)
+            evidence["angiography_findings"] = findings
+            evidence["metadata"]["extraction_mode"] = "regex"
+            logger.info(f"{log_prefix} Regex extraction completed: {len(findings)} findings")
+
         return evidence
