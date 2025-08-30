@@ -76,13 +76,7 @@ def main():
     parser.add_argument(
         "--all", action="store_true", help="Process all available admissions"
     )
-    # LLM options
-    parser.add_argument(
-        "--llm-api-key",
-        type=str,
-        default=None,
-        help="LLM API key (or set TOGETHER_API_KEY/LLM_API_KEY env var)",
-    )
+    # LLM options (API key is read from .env file)
     parser.add_argument(
         "--llm-model", type=str, default=None, help="LLM model name (overrides default)"
     )
@@ -128,7 +122,6 @@ def main():
             output_dir=args.output_dir,
             config={
                 "llm": {
-                    "api_key": args.llm_api_key,
                     "model": args.llm_model,
                     "base_url": args.llm_base_url,
                 }

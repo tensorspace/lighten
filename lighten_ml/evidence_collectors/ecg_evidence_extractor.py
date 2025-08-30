@@ -488,7 +488,7 @@ class ECGEvidenceExtractor(BaseEvidenceCollector):
             "previous",
             "prior",
             "history of",
-            "h\/o",
+            "h/o",
             "no new",
             "no acute",
             "no evidence of",
