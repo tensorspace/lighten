@@ -61,7 +61,7 @@ class LabDataLoader(BaseDataLoader):
             self.data["charttime"] = pd.to_datetime(self.data["charttime"])
 
         logger.info("Lab data loaded successfully.")
-        
+
         # Initialize simple itemid-to-label mapping
         self._initialize_itemid_mapping()
 
@@ -95,30 +95,34 @@ class LabDataLoader(BaseDataLoader):
         """Initialize simple itemid-to-label mapping from d_labitems.csv."""
         try:
             logger.info("Initializing itemid-to-label mapping...")
-            
+
             if self.lab_items is None or self.lab_items.empty:
                 logger.warning("No lab items data available for mapping")
                 return
-            
+
             # Create simple mapping: itemid -> {label, fluid, category}
             self._itemid_to_label_map = {}
             for _, item in self.lab_items.iterrows():
-                itemid = int(item['itemid'])
+                itemid = int(item["itemid"])
                 self._itemid_to_label_map[itemid] = {
-                    'label': str(item['label']),
-                    'fluid': str(item.get('fluid', '')),
-                    'category': str(item.get('category', ''))
+                    "label": str(item["label"]),
+                    "fluid": str(item.get("fluid", "")),
+                    "category": str(item.get("category", "")),
                 }
-            
-            logger.info(f"Itemid mapping initialized: {len(self._itemid_to_label_map)} items mapped")
-            
+
+            logger.info(
+                f"Itemid mapping initialized: {len(self._itemid_to_label_map)} items mapped"
+            )
+
             # Log some example mappings for key tests
             troponin_itemids = [51003, 52642, 51002]  # Known troponin itemids
             for itemid in troponin_itemids:
                 if itemid in self._itemid_to_label_map:
                     mapping = self._itemid_to_label_map[itemid]
-                    logger.info(f"Troponin mapping: {itemid} -> {mapping['label']} (fluid: {mapping['fluid']})")
-            
+                    logger.info(
+                        f"Troponin mapping: {itemid} -> {mapping['label']} (fluid: {mapping['fluid']})"
+                    )
+
         except Exception as e:
             logger.error(f"Failed to initialize itemid mapping: {e}")
             self._itemid_to_label_map = None
@@ -148,32 +152,36 @@ class LabDataLoader(BaseDataLoader):
             & (self.data["itemid"].isin(itemids))
         ].copy()
 
-        logger.info(f"[{hadm_id}] Found {len(tests)} test records for itemids: {itemids}")
+        logger.info(
+            f"[{hadm_id}] Found {len(tests)} test records for itemids: {itemids}"
+        )
 
         if not tests.empty:
             # Add mapped label information if available
             if self._itemid_to_label_map:
                 for idx, test in tests.iterrows():
-                    itemid = test.get('itemid')
+                    itemid = test.get("itemid")
                     if itemid in self._itemid_to_label_map:
                         mapping = self._itemid_to_label_map[itemid]
                         # Ensure we have the mapped label (in case merge didn't work)
-                        if pd.isna(test.get('label')) or test.get('label') == '':
-                            tests.at[idx, 'label'] = mapping['label']
-                        if pd.isna(test.get('fluid')) or test.get('fluid') == '':
-                            tests.at[idx, 'fluid'] = mapping['fluid']
-                        if pd.isna(test.get('category')) or test.get('category') == '':
-                            tests.at[idx, 'category'] = mapping['category']
+                        if pd.isna(test.get("label")) or test.get("label") == "":
+                            tests.at[idx, "label"] = mapping["label"]
+                        if pd.isna(test.get("fluid")) or test.get("fluid") == "":
+                            tests.at[idx, "fluid"] = mapping["fluid"]
+                        if pd.isna(test.get("category")) or test.get("category") == "":
+                            tests.at[idx, "category"] = mapping["category"]
 
             # Log details about found tests
             for _, test in tests.iterrows():
-                itemid = test.get('itemid', 'N/A')
-                label = test.get('label', 'N/A')
-                fluid = test.get('fluid', 'N/A')
-                value = test.get('valuenum', 'N/A')
-                logger.info(f"[{hadm_id}] Test found: itemid={itemid}, "
-                           f"label='{label}', fluid='{fluid}', value={value}")
-            
+                itemid = test.get("itemid", "N/A")
+                label = test.get("label", "N/A")
+                fluid = test.get("fluid", "N/A")
+                value = test.get("valuenum", "N/A")
+                logger.info(
+                    f"[{hadm_id}] Test found: itemid={itemid}, "
+                    f"label='{label}', fluid='{fluid}', value={value}"
+                )
+
             values = tests["valuenum"].dropna()
             if not values.empty:
                 logger.info(f"[{hadm_id}] Values found: {list(values)}")
@@ -189,10 +197,10 @@ class LabDataLoader(BaseDataLoader):
 
     def get_lab_test_info(self, itemid: int) -> Optional[Dict[str, str]]:
         """Get label information for a specific itemid.
-        
+
         Args:
             itemid: The itemid to look up
-            
+
         Returns:
             Dictionary with label, fluid, and category info, or None if not found
         """
@@ -202,28 +210,28 @@ class LabDataLoader(BaseDataLoader):
 
     def search_itemids_by_label(self, search_term: str) -> List[int]:
         """Search for itemids that match a label search term.
-        
+
         Args:
             search_term: Term to search for in labels
-            
+
         Returns:
             List of matching itemids
         """
         if not self._itemid_to_label_map:
             return []
-        
+
         matching_itemids = []
         search_term_lower = search_term.lower()
-        
+
         for itemid, mapping in self._itemid_to_label_map.items():
-            if search_term_lower in mapping['label'].lower():
+            if search_term_lower in mapping["label"].lower():
                 matching_itemids.append(itemid)
-        
+
         return matching_itemids
 
     def get_troponin_tests(self, patient_id: str, hadm_id: str) -> pd.DataFrame:
         """Get troponin test results using direct itemid mapping.
-        
+
         This method uses the simplified approach: direct itemid lookup with
         label mapping from d_labitems.csv.
 
@@ -238,13 +246,17 @@ class LabDataLoader(BaseDataLoader):
 
         # Known troponin itemids from d_labitems.csv
         troponin_itemids = [51003, 52642, 51002]  # Troponin T, Troponin I, Troponin I
-        
+
         # Use the simplified itemid-based approach
-        troponin_tests = self.get_lab_tests_by_itemids(patient_id, hadm_id, troponin_itemids)
-        
+        troponin_tests = self.get_lab_tests_by_itemids(
+            patient_id, hadm_id, troponin_itemids
+        )
+
         if not troponin_tests.empty:
-            logger.info(f"[{hadm_id}] Found {len(troponin_tests)} troponin tests using direct itemid mapping")
-            
+            logger.info(
+                f"[{hadm_id}] Found {len(troponin_tests)} troponin tests using direct itemid mapping"
+            )
+
             # Log troponin-specific analysis
             values = troponin_tests["valuenum"].dropna()
             if not values.empty:
@@ -254,11 +266,15 @@ class LabDataLoader(BaseDataLoader):
                     f"[{hadm_id}] Values above threshold: {len(above_threshold)} out of {len(values)}"
                 )
         else:
-            logger.warning(f"[{hadm_id}] No troponin tests found using direct itemid mapping")
-        
+            logger.warning(
+                f"[{hadm_id}] No troponin tests found using direct itemid mapping"
+            )
+
         return troponin_tests
-    
-    def _get_troponin_tests_fallback(self, patient_id: str, hadm_id: str) -> pd.DataFrame:
+
+    def _get_troponin_tests_fallback(
+        self, patient_id: str, hadm_id: str
+    ) -> pd.DataFrame:
         """Fallback troponin test retrieval using hard-coded itemids.
 
         Args:
@@ -295,11 +311,15 @@ class LabDataLoader(BaseDataLoader):
             logger.info(
                 f"[{hadm_id}] Available itemids for this admission: {list(unique_itemids)[:20]}..."
             )  # Show first 20
-            
+
             # Check if any troponin itemids are present
-            troponin_itemids_found = [itemid for itemid in troponin_itemids if itemid in unique_itemids]
-            logger.info(f"[{hadm_id}] Troponin itemids found in data: {troponin_itemids_found}")
-            
+            troponin_itemids_found = [
+                itemid for itemid in troponin_itemids if itemid in unique_itemids
+            ]
+            logger.info(
+                f"[{hadm_id}] Troponin itemids found in data: {troponin_itemids_found}"
+            )
+
             # Also check for labels (in case merge worked)
             unique_labels = patient_admission_data["label"].dropna().unique()
             troponin_labels = [
@@ -326,14 +346,18 @@ class LabDataLoader(BaseDataLoader):
 
         # If no results with itemid, try label-based search as fallback
         if troponin_tests.empty:
-            logger.info(f"[{hadm_id}] No troponin tests found by itemid, trying label-based search...")
+            logger.info(
+                f"[{hadm_id}] No troponin tests found by itemid, trying label-based search..."
+            )
             troponin_tests = self.data[
                 (self.data["subject_id"] == patient_id)
                 & (self.data["hadm_id"] == hadm_id)
                 & (self.data["label"].str.contains("troponin", case=False, na=False))
             ].copy()
             if not troponin_tests.empty:
-                logger.info(f"[{hadm_id}] Found troponin tests using label-based search")
+                logger.info(
+                    f"[{hadm_id}] Found troponin tests using label-based search"
+                )
 
         logger.info(
             f"[{hadm_id}] Final troponin test records found: {len(troponin_tests)}"
@@ -342,9 +366,11 @@ class LabDataLoader(BaseDataLoader):
         if not troponin_tests.empty:
             # Log details about found tests
             for _, test in troponin_tests.iterrows():
-                logger.info(f"[{hadm_id}] Troponin test found: itemid={test.get('itemid', 'N/A')}, "
-                           f"label='{test.get('label', 'N/A')}', value={test.get('valuenum', 'N/A')}")
-            
+                logger.info(
+                    f"[{hadm_id}] Troponin test found: itemid={test.get('itemid', 'N/A')}, "
+                    f"label='{test.get('label', 'N/A')}', value={test.get('valuenum', 'N/A')}"
+                )
+
             values = troponin_tests["valuenum"].dropna()
             if not values.empty:
                 logger.info(f"[{hadm_id}] Troponin values found: {list(values)}")
@@ -357,7 +383,9 @@ class LabDataLoader(BaseDataLoader):
                     f"[{hadm_id}] Values above threshold: {len(above_threshold)} out of {len(values)}"
                 )
             else:
-                logger.warning(f"[{hadm_id}] Troponin tests found but no numeric values available")
+                logger.warning(
+                    f"[{hadm_id}] Troponin tests found but no numeric values available"
+                )
 
         # Sort by charttime
         if not troponin_tests.empty and "charttime" in troponin_tests.columns:
@@ -366,19 +394,23 @@ class LabDataLoader(BaseDataLoader):
         return troponin_tests
 
     # Legacy method for backward compatibility
-    def get_lab_tests_by_type(self, patient_id: str, hadm_id: str, test_type: str) -> pd.DataFrame:
+    def get_lab_tests_by_type(
+        self, patient_id: str, hadm_id: str, test_type: str
+    ) -> pd.DataFrame:
         """Legacy method - now uses direct itemid search with label mapping.
-        
+
         Attempts to find itemids for the requested test type and uses direct lookup.
         """
-        logger.warning(f"get_lab_tests_by_type is deprecated. Use get_lab_tests_by_itemids or search_itemids_by_label instead.")
-        
+        logger.warning(
+            f"get_lab_tests_by_type is deprecated. Use get_lab_tests_by_itemids or search_itemids_by_label instead."
+        )
+
         # Search for itemids that match the test type
         matching_itemids = self.search_itemids_by_label(test_type)
         if matching_itemids:
             logger.info(f"Found matching itemids for '{test_type}': {matching_itemids}")
             return self.get_lab_tests_by_itemids(patient_id, hadm_id, matching_itemids)
-        
+
         # Fallback to label-based search
         logger.info(f"No itemids found for '{test_type}', using label search")
         return self.get_lab_tests_by_name(patient_id, hadm_id, test_type)
@@ -395,10 +427,12 @@ class LabDataLoader(BaseDataLoader):
         return self._categorizer.get_categorization_summary()
 
     def search_lab_tests_by_criteria(
-        self, patient_id: str, hadm_id: str, 
+        self,
+        patient_id: str,
+        hadm_id: str,
         test_name: Optional[str] = None,
         fluid_type: Optional[str] = None,
-        category_filter: Optional[str] = None
+        category_filter: Optional[str] = None,
     ) -> pd.DataFrame:
         """Advanced search for lab tests with multiple criteria.
 
@@ -415,12 +449,13 @@ class LabDataLoader(BaseDataLoader):
         if self.data is None:
             self.load_data()
 
-        logger.info(f"[{hadm_id}] Advanced lab test search: name='{test_name}', fluid='{fluid_type}', category='{category_filter}'")
+        logger.info(
+            f"[{hadm_id}] Advanced lab test search: name='{test_name}', fluid='{fluid_type}', category='{category_filter}'"
+        )
 
         # Start with patient/admission filter
         tests = self.data[
-            (self.data["subject_id"] == patient_id) & 
-            (self.data["hadm_id"] == hadm_id)
+            (self.data["subject_id"] == patient_id) & (self.data["hadm_id"] == hadm_id)
         ].copy()
 
         # Apply test name filter
@@ -433,7 +468,9 @@ class LabDataLoader(BaseDataLoader):
 
         # Apply category filter using intelligent categorization
         if category_filter and self._categorizer:
-            category_itemids = self._categorizer.get_itemids_for_category(category_filter)
+            category_itemids = self._categorizer.get_itemids_for_category(
+                category_filter
+            )
             if category_itemids:
                 tests = tests[tests["itemid"].isin(category_itemids)]
 
@@ -444,7 +481,6 @@ class LabDataLoader(BaseDataLoader):
             tests = tests.sort_values("charttime")
 
         return tests
-
 
     def get_lab_tests_by_name(
         self, patient_id: str, hadm_id: str, test_name: str
@@ -488,7 +524,9 @@ class LabDataLoader(BaseDataLoader):
         """
         results = {}
         for test_type in test_types:
-            results[test_type] = self.get_lab_tests_by_type(patient_id, hadm_id, test_type)
+            results[test_type] = self.get_lab_tests_by_type(
+                patient_id, hadm_id, test_type
+            )
         return results
 
     def get_available_lab_test_types(self) -> List[str]:
@@ -511,8 +549,10 @@ class LabDataLoader(BaseDataLoader):
         Returns:
             Dictionary containing summary of all lab test categories
         """
-        logger.info(f"[{hadm_id}] Generating comprehensive lab summary for patient {patient_id}")
-        
+        logger.info(
+            f"[{hadm_id}] Generating comprehensive lab summary for patient {patient_id}"
+        )
+
         summary = {
             "patient_id": patient_id,
             "hadm_id": hadm_id,
@@ -522,7 +562,7 @@ class LabDataLoader(BaseDataLoader):
             "liver_function": {},
             "lipid_panel": {},
             "other_tests": {},
-            "test_counts": {}
+            "test_counts": {},
         }
 
         # Cardiac markers
@@ -533,7 +573,14 @@ class LabDataLoader(BaseDataLoader):
             summary["test_counts"][test] = len(results)
 
         # Basic metabolic panel
-        metabolic_tests = ["glucose", "sodium", "potassium", "chloride", "creatinine", "bun"]
+        metabolic_tests = [
+            "glucose",
+            "sodium",
+            "potassium",
+            "chloride",
+            "creatinine",
+            "bun",
+        ]
         for test in metabolic_tests:
             results = self.get_lab_tests_by_type(patient_id, hadm_id, test)
             summary["metabolic_panel"][test] = len(results)
@@ -547,28 +594,48 @@ class LabDataLoader(BaseDataLoader):
             summary["test_counts"][test] = len(results)
 
         # Liver function
-        liver_tests = ["alt", "ast", "alkaline_phosphatase", "bilirubin_total", "bilirubin_direct"]
+        liver_tests = [
+            "alt",
+            "ast",
+            "alkaline_phosphatase",
+            "bilirubin_total",
+            "bilirubin_direct",
+        ]
         for test in liver_tests:
             results = self.get_lab_tests_by_type(patient_id, hadm_id, test)
             summary["liver_function"][test] = len(results)
             summary["test_counts"][test] = len(results)
 
         # Lipid panel
-        lipid_tests = ["cholesterol_total", "cholesterol_hdl", "cholesterol_ldl", "triglycerides"]
+        lipid_tests = [
+            "cholesterol_total",
+            "cholesterol_hdl",
+            "cholesterol_ldl",
+            "triglycerides",
+        ]
         for test in lipid_tests:
             results = self.get_lab_tests_by_type(patient_id, hadm_id, test)
             summary["lipid_panel"][test] = len(results)
             summary["test_counts"][test] = len(results)
 
         # Other important tests
-        other_tests = ["calcium", "magnesium", "albumin", "protein_total", "lactate", "hemoglobin_a1c"]
+        other_tests = [
+            "calcium",
+            "magnesium",
+            "albumin",
+            "protein_total",
+            "lactate",
+            "hemoglobin_a1c",
+        ]
         for test in other_tests:
             results = self.get_lab_tests_by_type(patient_id, hadm_id, test)
             summary["other_tests"][test] = len(results)
             summary["test_counts"][test] = len(results)
 
         total_tests = sum(summary["test_counts"].values())
-        logger.info(f"[{hadm_id}] Lab summary complete: {total_tests} total lab tests found across all categories")
+        logger.info(
+            f"[{hadm_id}] Lab summary complete: {total_tests} total lab tests found across all categories"
+        )
 
         return summary
 
