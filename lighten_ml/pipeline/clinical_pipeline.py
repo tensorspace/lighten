@@ -370,40 +370,46 @@ class ClinicalPipeline:
                     "Myocardial Infarction": []
                 }
 
-            mi_result_str = result['results'].get('mi_detected', 'NO')
-            mi_value = 'Y' if mi_result_str else 'N'
+            mi_detected = result.get('mi_detected', False)
+            mi_value = 'Y' if mi_detected else 'N'
             
-            onset_date_result = result['results'].get('mi_onset_date')
+            onset_date_result = result.get('mi_onset_date')
             
+            # Create the MI entry with the correct nested structure
             mi_entry = {"value": mi_value}
 
             if mi_value == 'Y' and onset_date_result:
+                # Format the onset date
                 onset_date_iso = onset_date_result
                 onset_date_formatted = pd.to_datetime(onset_date_iso).strftime('%Y-%m-%d')
                 
-                # Extract symptoms from evidence
+                # Extract symptoms from the original results data
                 symptoms_list = []
-                symptoms_evidence = result.get('evidence', {}).get('clinical', {}).get('symptoms', [])
+                original_result = results.get(hadm_id, {})
+                symptoms_evidence = original_result.get('evidence', {}).get('clinical', {}).get('symptoms', [])
                 for symptom in symptoms_evidence:
-                    symptoms_list.append({"value": symptom.get('symptom', 'unknown')})
+                    symptom_name = symptom.get('symptom', 'unknown')
+                    if symptom_name and symptom_name != 'unknown':
+                        symptoms_list.append({"value": symptom_name})
 
+                # Add the nested Myocardial Infarction Date structure
                 mi_entry["Myocardial Infarction Date"] = [
                     {
                         "value": onset_date_formatted,
                         "Symptoms": symptoms_list
                     }
                 ]
+            elif mi_value == 'Y':
+                # MI detected but no onset date - still include the Date structure but with null/empty
+                mi_entry["Myocardial Infarction Date"] = [
+                    {
+                        "value": None,
+                        "Symptoms": []
+                    }
+                ]
             
-            # Avoid duplicate entries for the same patient if results are consistent
-            # This logic can be enhanced for more complex aggregation scenarios
-            existing_mi_values = [entry['value'] for entry in requirement_output[patient_id]["Myocardial Infarction"]]
-            if mi_value not in existing_mi_values or mi_value == 'Y':
-                 # Overwrite 'N' with 'Y' if a positive case is found for the patient
-                if mi_value == 'Y':
-                    requirement_output[patient_id]["Myocardial Infarction"] = [entry for entry in requirement_output[patient_id]["Myocardial Infarction"] if entry['value'] != 'N']
-                
-                if not any(entry['value'] == 'Y' and mi_value == 'Y' for entry in requirement_output[patient_id]["Myocardial Infarction"]):
-                    requirement_output[patient_id]["Myocardial Infarction"].append(mi_entry)
+            # Add the MI entry to the patient's array
+            requirement_output[patient_id]["Myocardial Infarction"].append(mi_entry)
 
         requirement_json_path = os.path.join(self.output_dir, 'requirement_compliant_output.json')
         with open(requirement_json_path, 'w') as f:
