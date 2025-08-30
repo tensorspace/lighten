@@ -5,7 +5,6 @@ This module demonstrates how to use the new LLM-based extraction methods
 for better accuracy and flexibility in clinical evidence collection.
 """
 
-import os
 import sys
 from pathlib import Path
 
