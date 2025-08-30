@@ -31,36 +31,168 @@ class LabDataLoader(BaseDataLoader):
 
     def load_data(self) -> None:
         """Load and preprocess lab data."""
-        logger.info(f"Loading lab events from {self.lab_events_path}...")
+        logger.info("=== Starting Lab Data Loading Process ===")
+        logger.info(f"Lab events file: {self.lab_events_path}")
+        logger.info(f"Lab items file: {self.d_labitems_path}")
+
+        # Load lab items mapping
+        logger.info("Step 1: Loading lab items mapping...")
         try:
-            # Load lab items mapping
             self.lab_items = pd.read_csv(self.d_labitems_path)
+            logger.info(f"✅ Lab items loaded: {len(self.lab_items)} items")
+            logger.info(f"Lab items columns: {list(self.lab_items.columns)}")
+
+            # Log some statistics about lab items
+            if not self.lab_items.empty:
+                unique_categories = (
+                    self.lab_items["category"].nunique()
+                    if "category" in self.lab_items.columns
+                    else 0
+                )
+                unique_fluids = (
+                    self.lab_items["fluid"].nunique()
+                    if "fluid" in self.lab_items.columns
+                    else 0
+                )
+                logger.info(
+                    f"Lab items stats: {unique_categories} categories, {unique_fluids} fluid types"
+                )
         except FileNotFoundError:
-            logger.error(f"Lab items file not found at {self.d_labitems_path}")
+            logger.error(f"❌ Lab items file not found at {self.d_labitems_path}")
+            self.lab_items = pd.DataFrame()
+        except Exception as e:
+            logger.error(f"❌ Error loading lab items: {e}")
             self.lab_items = pd.DataFrame()
 
         # Define dtypes for ID columns
         dtypes = {"subject_id": str, "hadm_id": str}
+        logger.info("Step 2: Loading lab events...")
+        logger.info(
+            "Using chunked loading (10,000 rows per chunk) for memory efficiency"
+        )
 
         # Load lab events in chunks to handle large files
         chunks = []
-        for chunk in pd.read_csv(self.lab_events_path, chunksize=10000, dtype=dtypes):
-            # Merge with lab items to get test names
-            chunk = pd.merge(
-                chunk,
-                self.lab_items[["itemid", "label", "fluid", "category"]],
-                on="itemid",
-                how="left",
-            )
-            chunks.append(chunk)
+        total_rows_processed = 0
+        chunk_count = 0
 
+        try:
+            for chunk in pd.read_csv(
+                self.lab_events_path, chunksize=10000, dtype=dtypes
+            ):
+                chunk_count += 1
+                chunk_size = len(chunk)
+                total_rows_processed += chunk_size
+
+                logger.info(
+                    f"Processing chunk {chunk_count}: {chunk_size} rows (total: {total_rows_processed})"
+                )
+
+                # Log chunk statistics for first chunk
+                if chunk_count == 1:
+                    logger.info(f"Lab events columns: {list(chunk.columns)}")
+                    unique_patients = (
+                        chunk["subject_id"].nunique()
+                        if "subject_id" in chunk.columns
+                        else 0
+                    )
+                    unique_admissions = (
+                        chunk["hadm_id"].nunique() if "hadm_id" in chunk.columns else 0
+                    )
+                    unique_itemids = (
+                        chunk["itemid"].nunique() if "itemid" in chunk.columns else 0
+                    )
+                    logger.info(
+                        f"First chunk stats: {unique_patients} patients, {unique_admissions} admissions, {unique_itemids} unique itemids"
+                    )
+
+                # Merge with lab items to get test names
+                if not self.lab_items.empty:
+                    before_merge = len(chunk)
+                    chunk = pd.merge(
+                        chunk,
+                        self.lab_items[["itemid", "label", "fluid", "category"]],
+                        on="itemid",
+                        how="left",
+                    )
+                    after_merge = len(chunk)
+
+                    # Check merge success
+                    merged_with_labels = chunk["label"].notna().sum()
+                    logger.info(
+                        f"Chunk {chunk_count} merge: {merged_with_labels}/{after_merge} rows got labels ({merged_with_labels/after_merge*100:.1f}%)"
+                    )
+                else:
+                    logger.warning(
+                        f"Chunk {chunk_count}: No lab items available for merging"
+                    )
+
+                chunks.append(chunk)
+
+                # Log progress every 10 chunks
+                if chunk_count % 10 == 0:
+                    logger.info(
+                        f"Progress: {chunk_count} chunks processed, {total_rows_processed} total rows"
+                    )
+
+        except FileNotFoundError:
+            logger.error(f"❌ Lab events file not found: {self.lab_events_path}")
+            self.data = pd.DataFrame()
+            return
+        except Exception as e:
+            logger.error(f"❌ Error loading lab events: {e}")
+            self.data = pd.DataFrame()
+            return
+
+        # Concatenate all chunks
+        logger.info(f"Step 3: Concatenating {len(chunks)} chunks...")
         self.data = pd.concat(chunks) if chunks else pd.DataFrame()
+
+        if not self.data.empty:
+            logger.info(f"✅ Lab events concatenated: {len(self.data)} total records")
+
+            # Log final dataset statistics
+            unique_patients = (
+                self.data["subject_id"].nunique()
+                if "subject_id" in self.data.columns
+                else 0
+            )
+            unique_admissions = (
+                self.data["hadm_id"].nunique() if "hadm_id" in self.data.columns else 0
+            )
+            unique_itemids = (
+                self.data["itemid"].nunique() if "itemid" in self.data.columns else 0
+            )
+            logger.info(
+                f"Final dataset: {unique_patients} patients, {unique_admissions} admissions, {unique_itemids} unique itemids"
+            )
+
+            # Check label coverage
+            if "label" in self.data.columns:
+                labeled_records = self.data["label"].notna().sum()
+                label_coverage = labeled_records / len(self.data) * 100
+                logger.info(
+                    f"Label coverage: {labeled_records}/{len(self.data)} records ({label_coverage:.1f}%)"
+                )
+        else:
+            logger.warning("❌ No lab data loaded - dataset is empty")
 
         # Convert charttime to datetime
         if "charttime" in self.data.columns:
-            self.data["charttime"] = pd.to_datetime(self.data["charttime"])
+            logger.info("Step 4: Converting charttime to datetime format...")
+            try:
+                self.data["charttime"] = pd.to_datetime(self.data["charttime"])
+                logger.info("✅ Charttime conversion successful")
 
-        logger.info("Lab data loaded successfully.")
+                # Log time range
+                if not self.data.empty:
+                    min_time = self.data["charttime"].min()
+                    max_time = self.data["charttime"].max()
+                    logger.info(f"Time range: {min_time} to {max_time}")
+            except Exception as e:
+                logger.error(f"❌ Error converting charttime: {e}")
+
+        logger.info("✅ Lab data loading process completed successfully.")
 
         # Initialize simple itemid-to-label mapping
         self._initialize_itemid_mapping()
